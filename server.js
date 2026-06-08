@@ -1,4 +1,3 @@
-const http = require("http");
 const app = require("./app");
 const connectDB = require("./config/database");
 const {
@@ -10,9 +9,8 @@ const PORT = process.env.PORT || 3000;
 async function start() {
   await connectDB();
 
-  const server = http.createServer(app);
-
-  server.listen(PORT, () => {
+  // Express created server (not http.createServer).
+  app.listen(PORT, () => {
     // eslint-disable-next-line no-console
     console.log(`[server] Listening on port ${PORT}`);
   });
