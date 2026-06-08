@@ -1,51 +1,53 @@
 const mongoose = require("mongoose");
 
-const { Schema } = mongoose;
-
-const DVLA_FUEL_TYPES = ["PETROL", "DIESEL", "ELECTRIC", "HYBRID"];
-
-const VehicleSchema = new Schema(
+const vehicleSchema = new mongoose.Schema(
   {
+    // --- Relational Links ---
     customerId: {
-      type: Schema.Types.ObjectId,
+      type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      index: true,
     },
-    createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    }, // Sub-Admin issuing broker
 
-    registration: { type: String, required: true, uppercase: true, trim: true },
+    // --- Core Identity ---
+    registration: { type: String, required: true, uppercase: true, trim: true }, // UK Plate Number
+    make: String,
+    model: String,
+    colour: String,
+    year: Number,
 
-    make: { type: String },
-    model: { type: String },
-    colour: { type: String },
-    year: { type: Number },
+    // --- Technical Specifications ---
+    fuelType: {
+      type: String,
+      enum: ["PETROL", "DIESEL", "ELECTRIC", "HYBRID"],
+    },
+    engineCapacityCC: Number,
+    powerBHP: Number,
+    topSpeed: Number,
+    cylinders: Number,
+    fuelConsumptionMPG: Number,
 
-    fuelType: { type: String, enum: DVLA_FUEL_TYPES },
-
-    engineCapacityCC: { type: Number },
-    powerBHP: { type: Number },
-    topSpeed: { type: Number },
-    cylinders: { type: Number },
-
-    fuelConsumptionMPG: { type: Number },
-
-    motExpiryDate: { type: Date },
-    motStatus: { type: String },
-    taxStatus: { type: String },
-    taxDueDate: { type: Date },
-    registrationKeeper: { type: String },
-
-    v5cIssueDate: { type: Date },
-    co2Emissions: { type: Number },
-    euroStatus: { type: String },
-    wheelplan: { type: String },
+    // --- DVLA Compliance Status ---
+    motStatus: String,
+    motExpiryDate: Date,
+    taxStatus: String,
+    taxDueDate: Date,
+    registrationKeeper: String,
+    v5cIssueDate: Date,
+    co2Emissions: Number,
+    euroStatus: String,
+    wheelplan: String,
   },
   { timestamps: true },
 );
 
-// Query Performance Indexes
-VehicleSchema.index({ registration: 1 });
-VehicleSchema.index({ customerId: 1 });
+// --- High-Speed Query Indexes ---
+vehicleSchema.index({ registration: 1 });
+vehicleSchema.index({ customerId: 1 });
 
-module.exports = mongoose.model("Vehicle", VehicleSchema);
+module.exports = mongoose.model("Vehicle", vehicleSchema);

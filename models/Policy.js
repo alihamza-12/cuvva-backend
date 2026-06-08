@@ -3,87 +3,86 @@ const {
   generatePolicyNumber,
 } = require("../utils/helpers/policyNumberGenerator");
 
-const { Schema } = mongoose;
-
-const POLICY_TYPE = [
-  "Temporary Car",
-  "Temporary Van",
-  "Learner Driver",
-  "Impound",
-  "Motorhome",
-  "Drive Away",
-];
-
-const COVERAGE_TYPE = ["Comprehensive", "Third Party Only"];
-
-const UNDERWRITER = ["Wakam", "ERS Syndicate", "Crawford"];
-
-const POLICY_STATUS = ["Upcoming", "Active", "Expired", "Cancelled"];
-
-const PolicySchema = new Schema(
+const policySchema = new mongoose.Schema(
   {
-    policyNumber: { type: String, required: true },
-
+    // --- Core Identification & Links ---
+    policyNumber: { type: String, unique: true }, // Added unique constraint for absolute safety
     customerId: {
-      type: Schema.Types.ObjectId,
+      type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      index: true,
     },
-    createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    }, // Broker ID
 
-    // Store pence only. Example: £34.50 => 3450
-    premiumAmount: { type: Number, required: true },
-
+    // --- Calculations & Calendars ---
+    premiumAmount: { type: Number, required: true }, // Stored as pence integers (£34.50 is 3450)
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
+    startTime: String, // Clean optional declaration
+    endTime: String, // Clean optional declaration
 
-    startTime: { type: String, required: false },
-    endTime: { type: String, required: false },
-
-    policyType: { type: String, enum: POLICY_TYPE, required: true },
-    coverageType: { type: String, enum: COVERAGE_TYPE, required: true },
-    underwriter: { type: String, enum: UNDERWRITER, required: true },
-
+    // --- Contract Categorization (Inline Enums) ---
+    policyType: {
+      type: String,
+      enum: [
+        "Temporary Car",
+        "Temporary Van",
+        "Learner Driver",
+        "Impound",
+        "Motorhome",
+        "Drive Away",
+      ],
+      required: true,
+    },
+    coverageType: {
+      type: String,
+      enum: ["Comprehensive", "Third Party Only"],
+      required: true,
+    },
+    underwriter: {
+      type: String,
+      enum: ["Wakam", "ERS Syndicate", "Crawford"],
+      required: true,
+    },
     status: {
       type: String,
-      enum: POLICY_STATUS,
+      enum: ["Upcoming", "Active", "Expired", "Cancelled"],
       default: "Upcoming",
-      index: true,
     },
 
-    internalNotes: { type: String },
+    internalNotes: String,
   },
   { timestamps: true },
 );
 
-// Generate formatted policyNumber on save if missing/empty.
-PolicySchema.pre("save", async function preSave(next) {
+// --- Auto-Generate Policy Number Sequence ---
+policySchema.pre("save", async function (next) {
   try {
-    if (!this.policyNumber || String(this.policyNumber).trim() === "") {
+    if (!this.policyNumber || !this.policyNumber.trim()) {
       const year = this.startDate
         ? this.startDate.getFullYear()
         : new Date().getFullYear();
 
-      // Basic deterministic sequence placeholder:
-      // For real uniqueness/sequence concurrency-safe logic,
-      // implement a separate counter collection later.
-      const existing = await mongoose.model("Policy").countDocuments({
+      // Look up previous policies for this year to handle sequence order
+      const sequenceCount = await mongoose.model("Policy").countDocuments({
         policyNumber: { $regex: `^POL-${year}-` },
       });
 
-      this.policyNumber = generatePolicyNumber(year, existing + 1);
+      this.policyNumber = generatePolicyNumber(year, sequenceCount + 1);
     }
-
     next();
   } catch (err) {
-    next(err);
+    next(err); // Safely forward database execution errors
   }
 });
 
-// Query Performance Indexes
-PolicySchema.index({ customerId: 1, status: 1 });
-PolicySchema.index({ createdBy: 1 });
-PolicySchema.index({ policyNumber: 1 });
+// --- High-Speed Query Performance Indexes ---
+policySchema.index({ policyNumber: 1 });
+policySchema.index({ customerId: 1, status: 1 });
+policySchema.index({ createdBy: 1 });
 
-module.exports = mongoose.model("Policy", PolicySchema);
+module.exports = mongoose.model("Policy", policySchema);

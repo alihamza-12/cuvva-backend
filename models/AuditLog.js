@@ -1,32 +1,33 @@
 const mongoose = require("mongoose");
 
-const { Schema } = mongoose;
-
-const AuditLogSchema = new Schema(
+const auditLogSchema = new mongoose.Schema(
   {
-    actorId: { type: Schema.Types.ObjectId, ref: "User" },
-    actorRole: { type: String },
-    actorEmail: { type: String },
+    // --- Who did it (The Actor) ---
+    actorId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    actorRole: String,
+    actorEmail: String,
 
-    action: { type: String, required: true },
-    module: { type: String, required: true },
+    // --- What happened (The Event) ---
+    action: { type: String, required: true }, // e.g., 'CREATE_CUSTOMER', 'CANCEL_POLICY'
+    module: { type: String, required: true }, // e.g., 'Customer', 'Policy'
+    targetId: String, // The unique ID of the document being modified
 
-    targetId: { type: String },
+    // --- State Snapshots ---
+    payloadBefore: Object, // Data snapshot BEFORE the change
+    payloadAfter: Object, // Data snapshot AFTER the change
 
-    payloadBefore: { type: Object, default: null },
-    payloadAfter: { type: Object, default: null },
-
-    ipAddress: { type: String },
-    userAgent: { type: String },
-
+    // --- Connection & Status Details ---
+    ipAddress: String,
+    userAgent: String,
     success: { type: Boolean, default: true },
-    errorMessage: { type: String, default: null },
+    errorMessage: String,
   },
   { timestamps: true },
 );
 
-// Helpful indexes (audit log lookups)
-AuditLogSchema.index({ actorId: 1, createdAt: -1 });
-AuditLogSchema.index({ module: 1, action: 1, createdAt: -1 });
+// --- High-Speed Query Performance Indexes ---
+// Optimized for sorting logs by newest first (-1)
+auditLogSchema.index({ actorId: 1, createdAt: -1 });
+auditLogSchema.index({ module: 1, action: 1, createdAt: -1 });
 
-module.exports = mongoose.model("AuditLog", AuditLogSchema);
+module.exports = mongoose.model("AuditLog", auditLogSchema);

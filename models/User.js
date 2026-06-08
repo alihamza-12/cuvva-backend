@@ -1,80 +1,69 @@
 const mongoose = require("mongoose");
 
-const { Schema } = mongoose;
-
-const AddressSchema = new Schema(
+const userSchema = new mongoose.Schema(
   {
-    line1: { type: String, required: true, trim: true },
-    line2: { type: String, trim: true },
-    city: { type: String, required: true, trim: true },
-    county: { type: String, trim: true },
-    postcode: { type: String, required: true, trim: true, uppercase: true },
-    country: { type: String, default: "UK", trim: true, uppercase: true },
-  },
-  { _id: false },
-);
-
-const UserSchema = new Schema(
-  {
+    // --- Account Basics ---
     fullName: { type: String, required: true, trim: true },
-    firstName: { type: String, trim: true },
-    lastName: { type: String, trim: true },
-
+    firstName: { type: String },
+    lastName: { type: String },
     email: {
       type: String,
+      required: true,
       unique: true,
       lowercase: true,
       trim: true,
-      required: true,
     },
-    passwordHash: { type: String, required: true },
-
+    password: { type: String, required: true },
     phone: { type: String, trim: true },
     dateOfBirth: { type: Date },
 
-    address: { type: AddressSchema, required: false },
+    // --- Flat Address Format (No nested sub-schemas) ---
+    address: {
+      line1: String,
+      line2: String,
+      city: String,
+      county: String,
+      postcode: { type: String, uppercase: true, trim: true },
+      country: { type: String, default: "UK" },
+    },
 
-    lastFourDigits: { type: String, maxlength: 4, trim: true },
-
+    // --- Tracking & Limits ---
+    lastFourDigits: { type: String, trim: true }, // Simple search marker
     role: {
       type: String,
       enum: ["Super Admin", "Sub Admin", "Customer"],
       required: true,
     },
+    status: {
+      type: String,
+      enum: ["Active", "Suspended"],
+      default: "Active",
+    },
+    expiresAt: { type: Date, default: null }, // Time limit for Sub-Admins
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // Tracks ownership chain
 
-    status: { type: String, enum: ["Active", "Suspended"], default: "Active" },
-
-    // Temporal expiration limit applied exclusively to Sub Admins.
-    expiresAt: { type: Date, default: null },
-
-    createdBy: { type: Schema.Types.ObjectId, ref: "User", index: true },
-
-    refreshTokens: { type: [String], default: [] },
-
-    passwordResetToken: { type: String, default: null },
-    passwordResetExpires: { type: Date, default: null },
+    // --- Security Passports ---
+    refreshTokens: [String],
+    resetToken: String,
+    resetExpires: Date,
   },
   { timestamps: true },
 );
 
-UserSchema.pre("save", function preSave(next) {
-  if (this.fullName) {
-    const trimmed = String(this.fullName).trim().replace(/\s+/g, " ");
-    this.fullName = trimmed;
-
-    const parts = trimmed.split(" ");
+// --- Developer Smart Helper ---
+// Automatically splits "Jane Sarah Doe" into "Jane" and "Sarah Doe" before saving
+userSchema.pre("save", function (next) {
+  if (this.isModified("fullName") && this.fullName) {
+    const parts = this.fullName.trim().split(/\s+/);
     this.firstName = parts[0] || "";
-    this.lastName = parts.length > 1 ? parts.slice(1).join(" ") : "";
+    this.lastName = parts.slice(1).join(" ") || "";
   }
   next();
 });
 
-// Query Performance Indexes
-UserSchema.index({ email: 1 }, { weights: { email: 1 } });
-UserSchema.index({ role: 1, status: 1 }, { weights: { role: 1, status: 1 } });
-UserSchema.index(
-  { createdBy: 1, role: 1 },
-  { weights: { createdBy: 1, role: 1 } },
-);
+// High-speed index keys
+userSchema.index({ email: 1 });
+userSchema.index({ role: 1, status: 1 });
+userSchema.index({ createdBy: 1 });
 
-module.exports = mongoose.model("User", UserSchema);
+module.exports = mongoose.model("User", userSchema);
