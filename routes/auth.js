@@ -8,7 +8,7 @@ const router = express.Router();
 
 // ==========================================
 // @route   POST /api/auth/register
-// @desc    Strict Customer Creation Endpoint (No Admins Can Be Registered)
+// @desc    Hierarchical Registration Endpoint (Super Admin can create Sub Admin/Customer; Sub Admin can only create Customer)
 // @access  Protected (Super Admin & Sub Admin Only)
 // ==========================================
 router.post(
@@ -17,18 +17,26 @@ router.post(
   authorizeRoles("Super Admin", "Sub Admin"),
   async (req, res, next) => {
     try {
-      const { fullName, email, password, role } = req.body;
+      const { fullName, email, password, role, expiresAt } = req.body;
 
-      // RULE 2 & 3 ENFORCEMENT: Block any attempts to spawn management roles via endpoints
-      if (role && role !== "Customer") {
+      // RULE 2 & 3 ENFORCEMENT: Enforce strict creation hierarchy boundaries
+      if (role === "Super Admin") {
         return res.status(400).json({
           message:
-            "Registration Rejected: Management roles cannot be created via endpoint. This route exclusively spawns 'Customer' accounts.",
+            "Registration Rejected: A Super Admin cannot be created via endpoints.",
+        });
+      }
+
+      // Sub Admins are strictly forbidden from spawning anything other than basic Customers
+      if (req.user.role === "Sub Admin" && role !== "Customer") {
+        return res.status(403).json({
+          message:
+            "Forbidden: As a Sub Admin, you are exclusively permitted to register 'Customer' accounts.",
         });
       }
 
       // 1. Enforce required operational fields
-      if (!fullName || !email || !password) {
+      if (!fullName || !email || !password || !role) {
         return res
           .status(400)
           .json({ message: "All registration fields are required" });
@@ -46,27 +54,28 @@ router.post(
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
 
-      // 4. Instantiate new record strictly bound to the 'Customer' role
-      const newCustomer = new User({
+      // 4. Instantiate new record strictly bound to the validated hierarchical role rules
+      const newUser = new User({
         fullName,
         email: email.toLowerCase(),
         password: hashedPassword,
-        role: "Customer", // Hard-locked programmatic fallback
+        role, // Dynamically handled based on the validated logic rules above
         status: "Active",
         createdBy: req.user._id, // Audit link: Tracks which admin/sub-admin executed this action
-        expiresAt: null, // Customers retain standard persistent access
+        expiresAt:
+          role === "Sub Admin" && expiresAt ? new Date(expiresAt) : null, // Sets temporal constraint window only for Sub Admins
       });
 
-      await newCustomer.save();
+      await newUser.save();
 
       res.status(201).json({
         success: true,
-        message: `Customer account registered successfully by ${req.user.role}.`,
+        message: `${role} account registered successfully by ${req.user.role}.`,
         user: {
-          id: newCustomer._id,
-          fullName: newCustomer.fullName,
-          email: newCustomer.email,
-          role: newCustomer.role,
+          id: newUser._id,
+          fullName: newUser.fullName,
+          email: newUser.email,
+          role: newUser.role,
         },
       });
     } catch (error) {
