@@ -6,7 +6,7 @@ const {
 const policySchema = new mongoose.Schema(
   {
     // --- Core Identification & Links ---
-    policyNumber: { type: String, unique: true }, // Added unique constraint for absolute safety
+    policyNumber: { type: String, unique: true }, // unique: true automatically creates an index!
     customerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -22,8 +22,8 @@ const policySchema = new mongoose.Schema(
     premiumAmount: { type: Number, required: true }, // Stored as pence integers (£34.50 is 3450)
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
-    startTime: String, // Clean optional declaration
-    endTime: String, // Clean optional declaration
+    startTime: String,
+    endTime: String,
 
     // --- Contract Categorization (Inline Enums) ---
     policyType: {
@@ -81,7 +81,7 @@ policySchema.pre("save", async function (next) {
 });
 
 // --- High-Speed Query Performance Indexes ---
-policySchema.index({ policyNumber: 1 });
+// (Removed the duplicate policyNumber index from here)
 policySchema.index({ customerId: 1, status: 1 });
 policySchema.index({ createdBy: 1 });
 

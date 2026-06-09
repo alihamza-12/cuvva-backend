@@ -5,6 +5,8 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
+// --- Import Security Middlewares ---
+const { verifyJWT } = require("./middlewares/auth"); // Added to intercept operational requests
 
 const authRoutes = require("./routes/auth");
 const vehicleRoutes = require("./routes/vehicles");
@@ -37,8 +39,8 @@ app.use(
 
 // Route gates (placeholders; no controller logic).
 app.use("/api/auth", authRoutes);
-app.use("/api/vehicles", vehicleRoutes);
-app.use("/api/policies", policyRoutes);
+app.use("/api/vehicles", verifyJWT, vehicleRoutes);
+app.use("/api/policies", verifyJWT, policyRoutes);
 
 app.get("/health", (req, res) => {
   res.status(200).json({ ok: true });
