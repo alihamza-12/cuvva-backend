@@ -9,6 +9,7 @@ const PORT = process.env.PORT || 3000;
 
 async function start() {
   await connectDB();
+  
   await seedSuperAdmin();
   // Express created server (not http.createServer).
   app.listen(PORT, () => {

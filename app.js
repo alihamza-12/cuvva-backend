@@ -3,6 +3,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
+const cookieParser = require("cookie-parser");
 const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
 // --- Import Security Middlewares ---
@@ -15,6 +16,7 @@ const policyRoutes = require("./routes/policies");
 const app = express();
 
 app.use(helmet());
+app.use(cookieParser()); // 👈 Essential for parsing cookies from incoming requests
 
 app.use(
   cors({

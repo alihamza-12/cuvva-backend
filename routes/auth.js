@@ -125,35 +125,53 @@ router.post("/login", async (req, res, next) => {
     const accessToken = jwt.sign(
       { id: user._id, role: user.role, email: user.email },
       process.env.JWT_SECRET,
-      { expiresIn: "15m" }
+      { expiresIn: "15m" },
     );
 
     // 7. Signs stateful Refresh Token (Valid for 7 days)
     const refreshToken = jwt.sign(
       { id: user._id },
       process.env.JWT_REFRESH_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "7d" },
     );
 
     // 8. Commit refresh array token update to the cluster
     user.refreshTokens.push(refreshToken);
     await user.save();
 
+    // Configure cookie settings for security
+    const isProduction = process.env.NODE_ENV === "production";
+    const cookieOptions = {
+      httpOnly: true, // Prevents client-side scripts (XSS) from reading the tokens
+      secure: isProduction, // Enforces HTTPS in production environments
+      sameSite: isProduction ? "strict" : "lax", // Protects against CSRF attacks
+    };
+
+    // Attach cookies to the response object
+    res.cookie("accessToken", accessToken, {
+      ...cookieOptions,
+      maxAge: 15 * 60 * 1000, // 15 minutes in milliseconds
+    });
+
+    res.cookie("refreshToken", refreshToken, {
+      ...cookieOptions,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+    });
+
     // ========================================================
     // 9. ROLE-ISOLATED RESPONSE ENGINE
     // ========================================================
-    
+
     // CONDITION A: If the user is a simple Customer / Client
     if (user.role === "Customer") {
       return res.status(200).json({
         success: true,
         message: "Customer logged in successfully",
-        accessToken,
         user: {
           id: user._id,
           email: user.email,
-          role: user.role
-        }
+          role: user.role,
+        },
       });
     }
 
@@ -165,8 +183,6 @@ router.post("/login", async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      accessToken,
-      refreshToken,
       redirectTo: dashboardRoute,
       user: {
         id: user._id,
@@ -176,7 +192,6 @@ router.post("/login", async (req, res, next) => {
         status: user.status,
       },
     });
-
   } catch (error) {
     next(error); // Passes execution smoothly to your centralized error handler in app.js
   }
