@@ -17,7 +17,8 @@ router.post(
   authorizeRoles("Super Admin", "Sub Admin"),
   async (req, res, next) => {
     try {
-      const { fullName, email, password, role, expiresAt } = req.body;
+      const { fullName, email, password, role, expiresAt, durationDays } =
+        req.body;
 
       // RULE 2 & 3 ENFORCEMENT: Enforce strict creation hierarchy boundaries
       if (role === "Super Admin") {
@@ -54,6 +55,17 @@ router.post(
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
 
+      // --- Temporal Expiry Calculation Engine ---
+      let calculatedExpiry = null;
+      if (durationDays) {
+        calculatedExpiry = new Date();
+        calculatedExpiry.setDate(
+          calculatedExpiry.getDate() + parseInt(durationDays),
+        );
+      } else if (expiresAt) {
+        calculatedExpiry = new Date(expiresAt);
+      }
+
       // 4. Instantiate new record strictly bound to the validated hierarchical role rules
       const newUser = new User({
         fullName,
@@ -62,8 +74,7 @@ router.post(
         role, // Dynamically handled based on the validated logic rules above
         status: "Active",
         createdBy: req.user._id, // Audit link: Tracks which admin/sub-admin executed this action
-        expiresAt:
-          role === "Sub Admin" && expiresAt ? new Date(expiresAt) : null, // Sets temporal constraint window only for Sub Admins
+        expiresAt: calculatedExpiry, // Sets temporal constraint window dynamically for Sub Admins and Customers
       });
 
       await newUser.save();
@@ -76,6 +87,7 @@ router.post(
           fullName: newUser.fullName,
           email: newUser.email,
           role: newUser.role,
+          expiresAt: newUser.expiresAt,
         },
       });
     } catch (error) {
@@ -113,15 +125,30 @@ router.post("/login", async (req, res, next) => {
         .json({ message: "Your account is suspended. Contact a Super Admin." });
     }
 
-    // 4. Temporal Guard: Has this Sub Admin expired?
-    if (
-      user.role === "Sub Admin" &&
-      user.expiresAt &&
-      new Date() > user.expiresAt
-    ) {
-      return res
-        .status(403)
-        .json({ message: "Your access window has expired." });
+    // 4. Temporal Guard: Has this Sub Admin or Customer expired?
+    if (user.expiresAt && new Date() > user.expiresAt) {
+      // Dynamic response if a Sub Admin account access window closes
+      if (user.role === "Sub Admin") {
+        return res.status(403).json({
+          message:
+            "Your access window has expired. Contact a Super Admin for more subscription.",
+        });
+      }
+
+      // Dynamic lookup response if a Customer account access window closes
+      if (user.role === "Customer") {
+        const creator = await User.findById(user.createdBy).select(
+          "fullName email",
+        );
+        const managerName = creator
+          ? creator.fullName
+          : "your system administrator";
+        const managerEmail = creator ? creator.email : "support";
+
+        return res.status(403).json({
+          message: `Your access window has expired. Contact your administrator ${managerName} (${managerEmail}) for more subscription.`,
+        });
+      }
     }
 
     // 5. Compare cryptographic password match (Validates against seeded password strings too)
