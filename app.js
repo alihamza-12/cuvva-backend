@@ -13,6 +13,7 @@ const authRoutes = require("./routes/auth");
 const vehicleRoutes = require("./routes/vehicles");
 const policyRoutes = require("./routes/policies");
 const customerRoutes = require("./routes/customers"); // 1. Import the new customer manager router
+const managementRoutes = require("./routes/management");
 
 const app = express();
 
@@ -45,6 +46,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/vehicles", verifyJWT, vehicleRoutes);
 app.use("/api/policies", verifyJWT, policyRoutes);
 app.use("/api/customers", customerRoutes); // 2. Mount the gateway pipeline (verifyJWT is handled inside)
+app.use("/api/management", managementRoutes);
 
 app.get("/health", (req, res) => {
   res.status(200).json({ ok: true });
