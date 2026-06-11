@@ -5,6 +5,59 @@ const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 const router = express.Router();
 
 // ==========================================
+// @route   GET /api/management/subadmins
+// @desc    Get All Sub Admins across the platform
+// @access  Protected (Super Admin Only)
+// ==========================================
+router.get(
+  "/subadmins",
+  verifyJWT,
+  authorizeRoles("Super Admin"),
+  async (req, res, next) => {
+    try {
+      const subAdmins = await User.find({ role: "Sub Admin" })
+        .populate("createdBy", "fullName email")
+        .select("-password -refreshTokens")
+        .sort({ createdAt: -1 });
+
+      res.status(200).json({
+        success: true,
+        count: subAdmins.length,
+        subAdmins,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// ==========================================
+// @route   GET /api/management/customers
+// @desc    Get All Customers across the platform (Global overview with creator details)
+// @access  Protected (Super Admin Only)
+// ==========================================
+router.get(
+  "/customers",
+  verifyJWT,
+  authorizeRoles("Super Admin"),
+  async (req, res, next) => {
+    try {
+      const customers = await User.find({ role: "Customer" })
+        .populate("createdBy", "fullName email role")
+        .select("-password -refreshTokens")
+        .sort({ createdAt: -1 });
+
+      res.status(200).json({
+        success: true,
+        count: customers.length,
+        customers,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+// ==========================================
 // @route   PATCH /api/management/status/:id
 // @desc    Hierarchical Status Engine (Toggle 'Active' / 'Suspended' States)
 // @access  Protected (Super Admin & Sub Admin Only)
@@ -29,11 +82,9 @@ router.patch(
       // 2. Locate target user profile record in database cluster
       const targetUser = await User.findById(id);
       if (!targetUser) {
-        return res
-          .status(404)
-          .json({
-            message: "Operational Error: Target account profile not found.",
-          });
+        return res.status(404).json({
+          message: "Operational Error: Target account profile not found.",
+        });
       }
 
       // 3. Absolute Protection Guard: Super Admin records can NEVER be modified by endpoints
