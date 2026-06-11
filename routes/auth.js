@@ -233,4 +233,41 @@ router.post("/login", async (req, res, next) => {
   }
 });
 
+// ==========================================
+// @route   POST /api/auth/logout
+// @desc    Unified Logout Pipeline (Clears secure cookies and purges active database refresh tokens)
+// @access  Protected (Super Admin, Sub Admin, & Customer)
+// ==========================================
+router.post("/logout", verifyJWT, async (req, res, next) => {
+  try {
+    const refreshToken = req.cookies ? req.cookies.refreshToken : null;
+
+    // 1. If an active refresh token cookie is present, pull it out of the user's DB array to invalidate the session state completely
+    if (refreshToken) {
+      await User.findByIdAndUpdate(req.user._id, {
+        $pull: { refreshTokens: refreshToken },
+      });
+    }
+
+    // 2. Configure options to precisely match your login cookie rules
+    const isProduction = process.env.NODE_ENV === "production";
+    const cookieOptions = {
+      httpOnly: true, // Safeguards against client-side script cross-site scripting hooks
+      secure: isProduction, // Requires HTTPS protocol inside live production systems
+      sameSite: isProduction ? "strict" : "lax",
+    };
+
+    // 3. Clear both tracking session cookies instantly from the client browser agent / Postman cookie jar
+    res.clearCookie("accessToken", cookieOptions);
+    res.clearCookie("refreshToken", cookieOptions);
+
+    return res.status(200).json({
+      success: true,
+      message: `${req.user.role} logged out successfully. Session tokens completely cleared.`,
+    });
+  } catch (error) {
+    next(error); // Passes execution smoothly to your centralized error handler in app.js
+  }
+});
+
 module.exports = router;
