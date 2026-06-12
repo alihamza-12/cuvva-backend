@@ -48,7 +48,6 @@ const vehicleSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// High-speed index keys for lightning-fast lookups
-vehicleSchema.index({ registration: 1 });
+
 
 module.exports = mongoose.model("Vehicle", vehicleSchema);
