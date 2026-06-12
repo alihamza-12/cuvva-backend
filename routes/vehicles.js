@@ -117,4 +117,48 @@ router.get("/lookup/:registration", async (req, res) => {
   }
 });
 
+// --- Route 3: Get All Vehicles (Administrative Dashboard Feed) ---
+/**
+ * @route   GET /api/vehicles
+ * @desc    Returns a master list of all vehicles in the catalog
+ * @access  Private (Super Admin and Sub Admin Only)
+ */
+router.get(
+  "/all",
+  authorizeRoles("Super Admin", "Sub Admin"),
+  async (req, res) => {
+    try {
+      // Start building the query to find all vehicles and sort by newest first
+      let vehicleQuery = Vehicle.find().sort({ createdAt: -1 });
+
+      // 🛡️ ROLE-BASED VISIBILITY CONTROL
+      if (req.user && req.user.role === "Super Admin") {
+        // Super Admin sees every vehicle field + the creator's role, name, and email
+        vehicleQuery = vehicleQuery.populate(
+          "createdBy",
+          "fullName role email",
+        );
+      } else {
+        // Sub Admins see all vehicle asset details, but the 'createdBy' metadata is completely hidden
+        vehicleQuery = vehicleQuery.select("-createdBy");
+      }
+
+      // Execute the database query
+      const vehicles = await vehicleQuery;
+
+      return res.status(200).json({
+        success: true,
+        count: vehicles.length,
+        vehicles,
+      });
+    } catch (err) {
+      return res.status(500).json({
+        success: false,
+        message: "Server error while fetching the vehicle collection.",
+        error: err.message,
+      });
+    }
+  },
+);
+
 module.exports = router;
