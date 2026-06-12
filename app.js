@@ -15,6 +15,7 @@ const policyRoutes = require("./routes/policies");
 const customerRoutes = require("./routes/customers"); // 1. Import the new customer manager router
 const managementRoutes = require("./routes/management");
 
+
 const app = express();
 
 app.use(helmet());
