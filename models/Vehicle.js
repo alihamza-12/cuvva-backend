@@ -2,52 +2,53 @@ const mongoose = require("mongoose");
 
 const vehicleSchema = new mongoose.Schema(
   {
-    // --- Relational Links ---
-    customerId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
+    // --- Relational Links & Audit ---
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-    }, // Sub-Admin issuing broker
+    }, // The Super Admin or Sub-Admin who manually added this car to the system
 
     // --- Core Identity ---
-    registration: { type: String, required: true, uppercase: true, trim: true }, // UK Plate Number
-    make: String,
-    model: String,
-    colour: String,
-    year: Number,
+    registration: {
+      type: String,
+      required: true,
+      unique: true, // Prevents admins from adding the same plate twice
+      uppercase: true,
+      trim: true,
+    }, // UK Plate Number (e.g., "BD55SMR")
+    make: { type: String, required: true, trim: true },
+    model: { type: String, required: true, trim: true },
+    colour: { type: String, trim: true },
+    year: { type: Number, required: true },
 
     // --- Technical Specifications ---
     fuelType: {
       type: String,
       enum: ["PETROL", "DIESEL", "ELECTRIC", "HYBRID"],
+      required: true,
     },
-    engineCapacityCC: Number,
-    powerBHP: Number,
-    topSpeed: Number,
-    cylinders: Number,
-    fuelConsumptionMPG: Number,
+    engineCapacityCC: { type: Number },
+    powerBHP: { type: Number },
+    topSpeed: { type: Number },
+    cylinders: { type: Number },
+    fuelConsumptionMPG: { type: Number },
 
-    // --- DVLA Compliance Status ---
-    motStatus: String,
-    motExpiryDate: Date,
-    taxStatus: String,
-    taxDueDate: Date,
-    registrationKeeper: String,
-    v5cIssueDate: Date,
-    co2Emissions: Number,
-    euroStatus: String,
-    wheelplan: String,
+    // --- DVLA Compliance Status (Manually Managed) ---
+    motStatus: { type: String, default: "Valid" },
+    motExpiryDate: { type: Date },
+    taxStatus: { type: String, default: "Paid" },
+    taxDueDate: { type: Date },
+    registrationKeeper: { type: String, trim: true },
+    v5cIssueDate: { type: Date },
+    co2Emissions: { type: Number },
+    euroStatus: { type: String },
+    wheelplan: { type: String },
   },
   { timestamps: true },
 );
 
-// --- High-Speed Query Indexes ---
+// High-speed index keys for lightning-fast lookups
 vehicleSchema.index({ registration: 1 });
-vehicleSchema.index({ customerId: 1 });
 
 module.exports = mongoose.model("Vehicle", vehicleSchema);

@@ -6,26 +6,31 @@ const {
 const policySchema = new mongoose.Schema(
   {
     // --- Core Identification & Links ---
-    policyNumber: { type: String, unique: true }, // unique: true automatically creates an index!
+    policyNumber: { type: String, unique: true },
     customerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-    },
+    }, // The Customer buying/borrowing the car
+    vehicleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Vehicle",
+      required: true,
+    }, // The specific car being covered
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-    }, // Broker ID
+    }, // The Broker/Admin who issued the policy
 
     // --- Calculations & Calendars ---
-    premiumAmount: { type: Number, required: true }, // Stored as pence integers (£34.50 is 3450)
+    premiumAmount: { type: Number, required: true }, // Stored as pence/cents (£34.50 = 3450)
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
-    startTime: String,
-    endTime: String,
+    startTime: { type: String, required: true }, // E.g., "14:30"
+    endTime: { type: String, required: true }, // E.g., "15:30"
 
-    // --- Contract Categorization (Inline Enums) ---
+    // --- Contract Categorization ---
     policyType: {
       type: String,
       enum: [
@@ -54,35 +59,32 @@ const policySchema = new mongoose.Schema(
       default: "Upcoming",
     },
 
-    internalNotes: String,
+    internalNotes: { type: String, trim: true },
   },
   { timestamps: true },
 );
 
-// --- Auto-Generate Policy Number Sequence ---
+// --- Developer Smart Helper ---
 policySchema.pre("save", async function (next) {
   try {
     if (!this.policyNumber || !this.policyNumber.trim()) {
       const year = this.startDate
         ? this.startDate.getFullYear()
         : new Date().getFullYear();
-
-      // Look up previous policies for this year to handle sequence order
       const sequenceCount = await mongoose.model("Policy").countDocuments({
         policyNumber: { $regex: `^POL-${year}-` },
       });
-
       this.policyNumber = generatePolicyNumber(year, sequenceCount + 1);
     }
     next();
   } catch (err) {
-    next(err); // Safely forward database execution errors
+    next(err);
   }
 });
 
-// --- High-Speed Query Performance Indexes ---
-// (Removed the duplicate policyNumber index from here)
+// High-speed index keys
 policySchema.index({ customerId: 1, status: 1 });
+policySchema.index({ vehicleId: 1 });
 policySchema.index({ createdBy: 1 });
 
 module.exports = mongoose.model("Policy", policySchema);
