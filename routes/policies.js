@@ -53,21 +53,77 @@ router.post(
         });
       }
 
-      // 3. FRAUD & OVERLAP PREVENTION CHECK
-      const overlappingPolicy = await Policy.findOne({
-        vehicleId,
-        status: "Active",
-      });
+      // ========================================================
+      // 🛡️ TIMELINE OVERLAP & DUPLICATE PREVENTION (TIMESTAMP BASED)
+      // ========================================================
 
-      if (overlappingPolicy) {
+      // Normalize incoming inputs into clean ISO-date chunks to eliminate local timezone shifts
+      const cleanIncomingStartDate = startDate.split("T")[0];
+      const cleanIncomingEndDate = endDate.split("T")[0];
+
+      // Build absolute, comparable UNIX timestamps forced into UTC ('Z')
+      const incomingStartTimestamp = new Date(
+        `${cleanIncomingStartDate}T${startTime}:00.000Z`,
+      ).getTime();
+      const incomingEndTimestamp = new Date(
+        `${cleanIncomingEndDate}T${endTime}:00.000Z`,
+      ).getTime();
+
+      // Guard check: Prevent reversed timeline inputs
+      if (incomingStartTimestamp >= incomingEndTimestamp) {
         return res.status(400).json({
           success: false,
           message:
-            "Conflict Error: This vehicle is currently covered under an active session by another user. New coverage can only be issued or scheduled after their active window expires.",
+            "Validation Error: Policy end time must be later than the start time.",
         });
       }
 
-      // 4. Create and compile the policy transaction document
+      // Query database for ANY valid active/upcoming policies affecting EITHER this car OR this driver
+      const existingConflicts = await Policy.find({
+        $or: [{ vehicleId: vehicleId }, { customerId: customerId }],
+        status: { $in: ["Upcoming", "Active"] },
+      });
+
+      // Loop over existing entries and evaluate timeline collisions
+      for (const policy of existingConflicts) {
+        // Cleanly isolate database dates to ISO formatting strings
+        const dbStartDateStr = new Date(policy.startDate)
+          .toISOString()
+          .split("T")[0];
+        const dbEndDateStr = new Date(policy.endDate)
+          .toISOString()
+          .split("T")[0];
+
+        // Parse database values to matching absolute timestamps
+        const existingStartTimestamp = new Date(
+          `${dbStartDateStr}T${policy.startTime}:00.000Z`,
+        ).getTime();
+        const existingEndTimestamp = new Date(
+          `${dbEndDateStr}T${policy.endTime}:00.000Z`,
+        ).getTime();
+
+        // Standard Intersection Formula: (StartA < EndB) && (EndA > StartB)
+        const isOverlapping =
+          incomingStartTimestamp < existingEndTimestamp &&
+          incomingEndTimestamp > existingStartTimestamp;
+
+        if (isOverlapping) {
+          // Identify precisely what caused the timeline block for custom client reporting
+          const conflictTarget =
+            policy.vehicleId.toString() === vehicleId
+              ? "This vehicle is already covered under an active/upcoming session"
+              : "This customer already has an active/upcoming insurance window scheduled";
+
+          return res.status(400).json({
+            success: false,
+            message: `Conflict Error: ${conflictTarget} under policy (${policy.policyNumber}) from ${policy.startTime} to ${policy.endTime} on this date range.`,
+          });
+        }
+      }
+
+      // ========================================================
+      // 📝 COMMIT CREATION (EXECUTES ONLY IF TIMELINE IS CLEAR)
+      // ========================================================
       const newPolicy = await Policy.create({
         customerId,
         vehicleId,
@@ -80,7 +136,7 @@ router.post(
         coverageType,
         underwriter,
         internalNotes,
-        createdBy: req.user._id, // Capture the working Broker/Admin ID from verifyJWT session
+        createdBy: req.user._id, // Capture working Admin/Sub-Admin account session tracking
       });
 
       return res.status(201).json({
