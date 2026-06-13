@@ -187,49 +187,56 @@ router.get(
   },
 );
 
-// --- Route 3: Get My Policies (Role-Based Ownership & Dynamic Population) ---
+// --- Route 3: Get My Policies (Role-Based Ownership Feed) ---
 /**
  * @route   GET /api/policies/my
- * @desc    Returns a list of policies belonging to or managed by the logged-in user
- * @access  Private (Customer and Sub Admin Only)
+ * @desc    Returns a list of policies belonging to (Customer) or personally created by (Sub Admin / Super Admin) the logged-in user
+ * @access  Private (Customer, Sub Admin, and Super Admin)
  */
-router.get("/my", authorizeRoles("Customer", "Sub Admin"), async (req, res) => {
-  try {
-    let filter = {};
-    let populateCreatedByFields = "";
+router.get(
+  "/my",
+  authorizeRoles("Customer", "Sub Admin", "Super Admin"), // 🔓 Added Super Admin to the route gate
+  async (req, res) => {
+    try {
+      let filter = {};
+      let populateCreatedByFields = "";
 
-    // 🛡️ ROLE-BASED FILTERING & VISIBILITY CONFIGURATION
-    if (req.user.role === "Customer") {
-      // 1. Customers only see their own policies
-      filter = { customerId: req.user._id };
-      // 2. Customers only see the creator's Name and Email
-      populateCreatedByFields = "fullName email";
-    } else if (req.user.role === "Sub Admin") {
-      // 1. Sub Admins only see policies they personally created
-      filter = { createdBy: req.user._id };
-      // 2. Sub Admins see full details of the creator (Name, Email, and Role)
-      populateCreatedByFields = "fullName email role";
+      // 🛡️ ROLE-BASED FILTERING & VISIBILITY CONFIGURATION
+      if (req.user.role === "Customer") {
+        // 1. Customers only see policies issued to their customer account
+        filter = { customerId: req.user._id };
+        // 2. Customers only see the creator's Name and Email
+        populateCreatedByFields = "fullName email";
+      } else if (
+        req.user.role === "Sub Admin" ||
+        req.user.role === "Super Admin"
+      ) {
+        // 1. Both Sub Admins and Super Admins only see policies they personally created
+        filter = { createdBy: req.user._id };
+        // 2. Administrators see the full details of the creator (Name, Email, and Role)
+        populateCreatedByFields = "fullName email role";
+      }
+
+      // Execute query with dynamic population rules
+      const policies = await Policy.find(filter)
+        .populate("vehicleId", "registration make model colour")
+        .populate("customerId", "fullName email")
+        .populate("createdBy", populateCreatedByFields) // 🔄 Dynamically populates based on role!
+        .sort({ createdAt: -1 });
+
+      return res.status(200).json({
+        success: true,
+        count: policies.length,
+        policies,
+      });
+    } catch (err) {
+      return res.status(500).json({
+        success: false,
+        message: "Server error while retrieving your policy records.",
+        error: err.message,
+      });
     }
-
-    // Execute query with dynamic population rules
-    const policies = await Policy.find(filter)
-      .populate("vehicleId", "registration make model colour")
-      .populate("customerId", "fullName email")
-      .populate("createdBy", populateCreatedByFields) // 🔄 Dynamically populates based on role!
-      .sort({ createdAt: -1 });
-
-    return res.status(200).json({
-      success: true,
-      count: policies.length,
-      policies,
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      message: "Server error while retrieving your policy records.",
-      error: err.message,
-    });
-  }
-});
+  },
+);
 
 module.exports = router;
