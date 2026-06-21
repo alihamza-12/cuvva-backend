@@ -140,4 +140,36 @@ router.patch(
   },
 );
 
+// ==========================================
+// @route   GET /api/management/subadmins/:id
+// @desc    Get single Sub Admin by id
+// @access  Protected (Super Admin Only)
+// ==========================================
+router.get(
+  "/subadmins/:id",
+  verifyJWT,
+  authorizeRoles("Super Admin"),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+
+      const user = await User.findById(id)
+        .populate("createdBy", "fullName email role")
+        .select("-password -refreshTokens");
+
+      if (!user) {
+        return res.status(404).json({ message: "Sub Admin not found." });
+      }
+
+      if (user.role !== "Sub Admin") {
+        return res.status(403).json({ message: "Forbidden: Not a Sub Admin." });
+      }
+
+      return res.status(200).json({ success: true, user });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 module.exports = router;
