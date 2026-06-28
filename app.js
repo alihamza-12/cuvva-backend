@@ -10,16 +10,30 @@ const rateLimit = require("express-rate-limit");
 const { verifyJWT } = require("./middlewares/auth"); // Added to intercept operational requests
 
 const authRoutes = require("./routes/auth");
+
 const vehicleRoutes = require("./routes/vehicles");
 const policyRoutes = require("./routes/policies");
 const customerRoutes = require("./routes/customers"); // 1. Import the new customer manager router
 const managementRoutes = require("./routes/management");
 
-
 const app = express();
 
 app.use(helmet());
 app.use(cookieParser()); // 👈 Essential for parsing cookies from incoming requests
+
+// Debug aid (dev only): confirm whether refreshToken cookie arrives on refresh calls
+if (process.env.NODE_ENV !== "production") {
+  app.use((req, res, next) => {
+    if (req.path.includes("/api/auth/refresh-token")) {
+      // eslint-disable-next-line no-console
+      console.log(
+        "[auth] refresh-token cookies present:",
+        req.cookies ? req.cookies : null,
+      );
+    }
+    next();
+  });
+}
 
 app.use(
   cors({
