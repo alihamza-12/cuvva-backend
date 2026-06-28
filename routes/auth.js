@@ -270,4 +270,101 @@ router.post("/logout", verifyJWT, async (req, res, next) => {
   }
 });
 
+// ==========================================
+// @route   POST /api/auth/refresh-token
+// @desc    Issues a new accessToken using refreshToken cookie
+// @access  Public (cookie-based)
+// ==========================================
+router.post("/refresh-token", async (req, res, next) => {
+  try {
+    const refreshToken = req.cookies ? req.cookies.refreshToken : null;
+
+    if (!refreshToken) {
+      // Clear cookies to be safe
+      const isProduction = process.env.NODE_ENV === "production";
+      const cookieOptions = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "strict" : "lax",
+      };
+      res.clearCookie("accessToken", cookieOptions);
+      res.clearCookie("refreshToken", cookieOptions);
+      return res
+        .status(401)
+        .json({ message: "Unauthorized: Missing refresh token" });
+    }
+
+    // Verify refresh token signature
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    } catch (e) {
+      const isProduction = process.env.NODE_ENV === "production";
+      const cookieOptions = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "strict" : "lax",
+      };
+      res.clearCookie("accessToken", cookieOptions);
+      res.clearCookie("refreshToken", cookieOptions);
+      return res
+        .status(401)
+        .json({ message: "Unauthorized: Invalid or expired refresh token" });
+    }
+
+    // Ensure refresh token is still present in DB
+    const user = await User.findById(decoded.id);
+    if (!user || !Array.isArray(user.refreshTokens)) {
+      const isProduction = process.env.NODE_ENV === "production";
+      const cookieOptions = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "strict" : "lax",
+      };
+      res.clearCookie("accessToken", cookieOptions);
+      res.clearCookie("refreshToken", cookieOptions);
+      return res.status(401).json({ message: "Unauthorized: Session invalid" });
+    }
+
+    if (!user.refreshTokens.includes(refreshToken)) {
+      const isProduction = process.env.NODE_ENV === "production";
+      const cookieOptions = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "strict" : "lax",
+      };
+      res.clearCookie("accessToken", cookieOptions);
+      res.clearCookie("refreshToken", cookieOptions);
+      return res
+        .status(401)
+        .json({ message: "Unauthorized: Refresh token not recognized" });
+    }
+
+    // Issue new access token
+    const accessToken = jwt.sign(
+      { id: user._id, role: user.role, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: "15m" },
+    );
+
+    const isProduction = process.env.NODE_ENV === "production";
+    const cookieOptions = {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? "strict" : "lax",
+    };
+
+    res.cookie("accessToken", accessToken, {
+      ...cookieOptions,
+      maxAge: 15 * 60 * 1000,
+    });
+
+    return res
+      .status(200)
+      .json({ success: true, message: "Access token refreshed" });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;
