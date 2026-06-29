@@ -172,4 +172,78 @@ router.get(
   },
 );
 
+// ==========================================
+// @route   PATCH /api/management/subadmins/:id
+// @desc    Update full Sub Admin profile (Super Admin only)
+// @access  Protected (Super Admin Only)
+// ==========================================
+router.patch(
+  "/subadmins/:id",
+  verifyJWT,
+  authorizeRoles("Super Admin"),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { fullName, email, expiresAt, password } = req.body || {};
+
+      if (!fullName && !email && !expiresAt && !password) {
+        return res.status(400).json({ message: "No update fields provided." });
+      }
+
+      const targetUser = await User.findById(id);
+      if (!targetUser) {
+        return res.status(404).json({ message: "Sub Admin not found." });
+      }
+
+      if (targetUser.role !== "Sub Admin") {
+        return res.status(403).json({ message: "Forbidden: Not a Sub Admin." });
+      }
+
+      // Update basic fields (allow email if provided)
+      if (typeof fullName === "string" && fullName.trim()) {
+        targetUser.fullName = fullName.trim();
+      }
+
+      if (typeof email === "string" && email.trim()) {
+        targetUser.email = email.toLowerCase().trim();
+      }
+
+      // Update expiry window (can be null to clear)
+      if (expiresAt !== undefined) {
+        targetUser.expiresAt = expiresAt ? new Date(expiresAt) : null;
+      }
+
+      // Optional password update
+      if (password !== undefined) {
+        if (typeof password !== "string" || password.trim().length < 6) {
+          return res.status(400).json({
+            message: "Password must be at least 6 characters.",
+          });
+        }
+
+        const bcrypt = require("bcryptjs");
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+        targetUser.password = hashedPassword;
+      }
+
+      await targetUser.save();
+
+      return res.status(200).json({
+        success: true,
+        user: {
+          id: targetUser._id,
+          fullName: targetUser.fullName,
+          email: targetUser.email,
+          role: targetUser.role,
+          status: targetUser.status,
+          expiresAt: targetUser.expiresAt,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 module.exports = router;
