@@ -63,9 +63,17 @@ app.use("/api/policies", verifyJWT, policyRoutes);
 app.use("/api/customers", customerRoutes); // 2. Mount the gateway pipeline (verifyJWT is handled inside)
 app.use("/api/management", managementRoutes);
 
+//updated health check to verify ci/cd
 app.get("/health", (req, res) => {
-  console.log('Hello deployment done')
-  res.status(200).json({ ok: true });
+  
+  console.log('🚀 CI/CD Automation: New deployment successfully verified!');
+  
+  res.status(200).json({ 
+    status: "healthy",
+    cicd_working: true,
+    message: "Congratulations! Your automated CI/CD pipeline is working perfectly. 🎉",
+    deployed_at: new Date().toLocaleString()
+  });
 });
 
 // Centralized error handler.
