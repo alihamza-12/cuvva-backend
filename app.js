@@ -64,6 +64,7 @@ app.use("/api/customers", customerRoutes); // 2. Mount the gateway pipeline (ver
 app.use("/api/management", managementRoutes);
 
 app.get("/health", (req, res) => {
+  console.log('Hello deployment done')
   res.status(200).json({ ok: true });
 });
 

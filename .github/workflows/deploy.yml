@@ -1,0 +1,39 @@
+name: Deploy Backend to AWS EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Executing remote SSH commands to deploy
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /var/www/express-app
+            git pull origin main
+            
+            # Using 'EOF' with single quotes protects special characters in secrets
+            cat > .env << 'EOF'
+            PORT=${{ secrets.PORT }}
+            MONGODB_URI=${{ secrets.MONGODB_URI }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+            CORS_ORIGIN=${{ secrets.CORS_ORIGIN }}
+            NODE_ENV=production
+            EOF
+            
+            npm install
+            
+            # Safely restarts, or starts the process in the background if not already running
+            pm2 restart all || pm2 start server.js --name "backend"
