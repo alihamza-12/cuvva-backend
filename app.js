@@ -69,9 +69,9 @@ app.get("/health", (req, res) => {
   console.log('🚀 CI/CD Automation: New deployment successfully verified!');
   
   res.status(200).json({ 
-    status: "healthy",
+    status: "test: verifying fully automated backend pipeline",
     cicd_working: true,
-    message: "Congratulations! Your automated CI/CD pipeline is working perfectly. 🎉",
+    message: "test: verifying fully automated backend pipeline",
     deployed_at: new Date().toLocaleString()
   });
 });
