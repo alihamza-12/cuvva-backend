@@ -239,4 +239,44 @@ router.get(
   },
 );
 
+// --- Route 4: Get Policy by ID (Super Admin) ---
+/**
+ * @route   GET /api/policies/:id
+ * @desc    Returns a single policy contract with full relations.
+ * @access  Private (Super Admin Only)
+ */
+router.get(
+  "/:id",
+  verifyJWT,
+  authorizeRoles("Super Admin"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const policy = await Policy.findById(id)
+        .populate("customerId", "fullName email role")
+        .populate("vehicleId", "registration make model colour")
+        .populate("createdBy", "fullName role");
+
+      if (!policy) {
+        return res.status(404).json({
+          success: false,
+          message: "Policy not found.",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        policy,
+      });
+    } catch (err) {
+      return res.status(500).json({
+        success: false,
+        message: "Server error fetching policy detail.",
+        error: err.message,
+      });
+    }
+  },
+);
+
 module.exports = router;
