@@ -279,4 +279,139 @@ router.get(
   },
 );
 
+// --- Route 5: Update Policy (Super Admin any / Sub Admin only own) ---
+/**
+ * @route   PUT /api/policies/:id
+ * @desc    Update policy fields (premium, dates/times, policy/coverage, underwriter, status, internalNotes)
+ * @access  Private (Super Admin, Sub Admin)
+ */
+router.put(
+  "/:id",
+  verifyJWT,
+  authorizeRoles("Super Admin", "Sub Admin"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        premiumAmount,
+        startDate,
+        endDate,
+        startTime,
+        endTime,
+        policyType,
+        coverageType,
+        underwriter,
+        status,
+        internalNotes,
+      } = req.body;
+
+      const policy = await Policy.findById(id);
+      if (!policy) {
+        return res.status(404).json({
+          success: false,
+          message: "Policy not found.",
+        });
+      }
+
+      // Sub Admin ownership rule: only update policies they created
+      if (req.user.role === "Sub Admin") {
+        if (policy.createdBy.toString() !== req.user._id.toString()) {
+          return res.status(403).json({
+            success: false,
+            message: "Forbidden: you can only update policies you created.",
+          });
+        }
+      }
+
+      // Basic validation for timeline changes (if date/time provided)
+      if (startDate && endDate && startTime && endTime) {
+        const cleanIncomingStartDate = startDate.split("T")[0];
+        const cleanIncomingEndDate = endDate.split("T")[0];
+
+        const incomingStartTimestamp = new Date(
+          `${cleanIncomingStartDate}T${startTime}:00.000Z`,
+        ).getTime();
+        const incomingEndTimestamp = new Date(
+          `${cleanIncomingEndDate}T${endTime}:00.000Z`,
+        ).getTime();
+
+        if (incomingStartTimestamp >= incomingEndTimestamp) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Validation Error: Policy end time must be later than the start time.",
+          });
+        }
+
+        const existingConflicts = await Policy.find({
+          _id: { $ne: id },
+          $or: [
+            { vehicleId: policy.vehicleId },
+            { customerId: policy.customerId },
+          ],
+          status: { $in: ["Upcoming", "Active"] },
+        });
+
+        for (const existing of existingConflicts) {
+          const dbStartDateStr = new Date(existing.startDate)
+            .toISOString()
+            .split("T")[0];
+          const dbEndDateStr = new Date(existing.endDate)
+            .toISOString()
+            .split("T")[0];
+
+          const existingStartTimestamp = new Date(
+            `${dbStartDateStr}T${existing.startTime}:00.000Z`,
+          ).getTime();
+          const existingEndTimestamp = new Date(
+            `${dbEndDateStr}T${existing.endTime}:00.000Z`,
+          ).getTime();
+
+          const isOverlapping =
+            incomingStartTimestamp < existingEndTimestamp &&
+            incomingEndTimestamp > existingStartTimestamp;
+
+          if (isOverlapping) {
+            return res.status(400).json({
+              success: false,
+              message: `Conflict Error: overlapping with policy (${existing.policyNumber}).`,
+            });
+          }
+        }
+      }
+
+      // Apply updates (do not allow updating createdBy/customerId/vehicleId via this endpoint)
+      if (premiumAmount !== undefined) policy.premiumAmount = premiumAmount;
+      if (startDate !== undefined) policy.startDate = new Date(startDate);
+      if (endDate !== undefined) policy.endDate = new Date(endDate);
+      if (startTime !== undefined) policy.startTime = startTime;
+      if (endTime !== undefined) policy.endTime = endTime;
+      if (policyType !== undefined) policy.policyType = policyType;
+      if (coverageType !== undefined) policy.coverageType = coverageType;
+      if (underwriter !== undefined) policy.underwriter = underwriter;
+      if (status !== undefined) policy.status = status;
+      if (internalNotes !== undefined) policy.internalNotes = internalNotes;
+
+      await policy.save();
+
+      const updated = await Policy.findById(id)
+        .populate("customerId", "fullName email role")
+        .populate("vehicleId", "registration make model colour")
+        .populate("createdBy", "fullName role");
+
+      return res.status(200).json({
+        success: true,
+        message: "Insurance policy updated successfully.",
+        policy: updated,
+      });
+    } catch (err) {
+      return res.status(500).json({
+        success: false,
+        message: "Server error while updating insurance policy.",
+        error: err.message,
+      });
+    }
+  },
+);
+
 module.exports = router;
