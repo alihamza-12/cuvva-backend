@@ -5,6 +5,46 @@ const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 const router = express.Router();
 
 // =========================================================================
+// @route   GET /api/customers/me
+// @desc    Get the currently authenticated Customer's own profile
+// @access  Protected (Customer Only)
+// =========================================================================
+router.get(
+  "/me",
+  (req, res, next) => {
+    // Debug: confirm middleware chain can read cookie at the very start
+    console.log("[customers:/me] cookies at entry:", req.cookies);
+    next();
+  },
+  verifyJWT,
+  authorizeRoles("Customer"),
+  async (req, res, next) => {
+    try {
+      if (!req.user || req.user.role !== "Customer") {
+        return res
+          .status(403)
+          .json({ message: "Forbidden: Customer access only" });
+      }
+
+      const customer = await User.findById(req.user._id)
+        .select("fullName email role status expiresAt createdBy")
+        .lean();
+
+      if (!customer) {
+        return res.status(404).json({ message: "Customer account not found" });
+      }
+
+      return res.status(200).json({
+        success: true,
+        customer,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// =========================================================================
 // @route   GET /api/customers
 // @desc    Get Customers List (Super Admin gets all, Sub Admin gets only theirs)
 // @access  Protected (Super Admin & Sub Admin Only)
@@ -14,6 +54,11 @@ router.get(
   verifyJWT,
   authorizeRoles("Super Admin", "Sub Admin"),
   async (req, res, next) => {
+    console.log("[customers:/] reached controller", {
+      userRole: req.user?.role,
+      userId: req.user?._id?.toString?.(),
+    });
+
     try {
       let queryFilter = { role: "Customer" };
 
@@ -22,10 +67,9 @@ router.get(
         queryFilter.createdBy = req.user._id;
       }
 
-      // Execute query and populate creator info (only pulling non-sensitive tracking fields)
       const customers = await User.find(queryFilter)
         .populate("createdBy", "fullName email role")
-        .select("-password -refreshTokens") // Clean payload protection
+        .select("-password -refreshTokens")
         .sort({ createdAt: -1 });
 
       res.status(200).json({
@@ -34,7 +78,7 @@ router.get(
         customers,
       });
     } catch (error) {
-      next(error); // Passes execution smoothly to your centralized error handler in app.js
+      next(error);
     }
   },
 );
@@ -51,7 +95,7 @@ router.get(
   async (req, res, next) => {
     try {
       const customer = await User.findOne({
-        _id: req.id || req.params.id,
+        _id: req.params.id,
         role: "Customer",
       })
         .populate("createdBy", "fullName email role")
@@ -142,9 +186,9 @@ router.patch(
 
       if (password !== undefined) {
         if (typeof password !== "string" || password.trim().length < 6) {
-          return res.status(400).json({
-            message: "Password must be at least 6 characters.",
-          });
+          return res
+            .status(400)
+            .json({ message: "Password must be at least 6 characters." });
         }
 
         const bcrypt = require("bcryptjs");
