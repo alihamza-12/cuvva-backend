@@ -27,7 +27,7 @@ router.get(
       }
 
       const customer = await User.findById(req.user._id)
-        .select("fullName email role status expiresAt createdBy")
+        .select("fullName email role status expiresAt createdBy createdAt")
         .lean();
 
       if (!customer) {
