@@ -27,6 +27,9 @@ const userSchema = new mongoose.Schema(
       country: { type: String, default: "UK" },
     },
 
+    // --- Profile Overrides ---
+    preferredName: { type: String, trim: true, default: undefined },
+
     // --- Tracking & Limits ---
     lastFourDigits: { type: String, trim: true }, // Simple search marker
     role: {

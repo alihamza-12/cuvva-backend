@@ -27,7 +27,9 @@ router.get(
       }
 
       const customer = await User.findById(req.user._id)
-        .select("fullName email role status expiresAt createdBy createdAt")
+        .select(
+          "fullName email role status expiresAt createdBy createdAt preferredName",
+        )
         .lean();
 
       if (!customer) {
@@ -37,6 +39,51 @@ router.get(
       return res.status(200).json({
         success: true,
         customer,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// =========================================================================
+// @route   PATCH /api/customers/me
+// @desc    Self-service: Customer updates their own preferredName
+// @access  Protected (Customer Only)
+// =========================================================================
+router.patch(
+  "/me",
+  verifyJWT,
+  authorizeRoles("Customer"),
+  async (req, res, next) => {
+    try {
+      const { preferredName } = req.body || {};
+
+      if (preferredName === undefined) {
+        return res.status(400).json({ message: "No update fields provided." });
+      }
+
+      const customer = await User.findById(req.user._id);
+      if (!customer) {
+        return res.status(404).json({ message: "Customer account not found" });
+      }
+
+      const trimmed =
+        typeof preferredName === "string" ? preferredName.trim() : "";
+      customer.preferredName = trimmed || null;
+
+      await customer.save();
+
+      return res.status(200).json({
+        success: true,
+        customer: {
+          id: customer._id,
+          fullName: customer.fullName,
+          firstName: customer.firstName,
+          lastName: customer.lastName,
+          email: customer.email,
+          preferredName: customer.preferredName,
+        },
       });
     } catch (error) {
       next(error);
