@@ -28,7 +28,7 @@ router.get(
 
       const customer = await User.findById(req.user._id)
         .select(
-          "fullName email role status expiresAt createdBy createdAt preferredName",
+          "fullName email role status expiresAt createdBy createdAt preferredName additionalEmails",
         )
         .lean();
 
@@ -48,7 +48,7 @@ router.get(
 
 // =========================================================================
 // @route   PATCH /api/customers/me
-// @desc    Self-service: Customer updates their own preferredName
+// @desc    Self-service: Customer updates their own preferredName or adds additional email
 // @access  Protected (Customer Only)
 // =========================================================================
 router.patch(
@@ -57,9 +57,9 @@ router.patch(
   authorizeRoles("Customer"),
   async (req, res, next) => {
     try {
-      const { preferredName } = req.body || {};
+      const { preferredName, additionalEmail } = req.body || {};
 
-      if (preferredName === undefined) {
+      if (preferredName === undefined && additionalEmail === undefined) {
         return res.status(400).json({ message: "No update fields provided." });
       }
 
@@ -68,9 +68,55 @@ router.patch(
         return res.status(404).json({ message: "Customer account not found" });
       }
 
-      const trimmed =
-        typeof preferredName === "string" ? preferredName.trim() : "";
-      customer.preferredName = trimmed || null;
+      if (preferredName !== undefined) {
+        const trimmed =
+          typeof preferredName === "string" ? preferredName.trim() : "";
+        customer.preferredName = trimmed || null;
+      }
+
+      if (additionalEmail !== undefined) {
+        const trimmedEmail =
+          typeof additionalEmail === "string"
+            ? additionalEmail.toLowerCase().trim()
+            : "";
+
+        if (!trimmedEmail) {
+          return res
+            .status(400)
+            .json({ message: "Email address is required." });
+        }
+
+        // Simple email format validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(trimmedEmail)) {
+          return res
+            .status(400)
+            .json({ message: "Please provide a valid email address." });
+        }
+
+        // Prevent adding the primary email as an additional email
+        if (trimmedEmail === customer.email) {
+          return res.status(400).json({
+            message: "This is already your main email address.",
+          });
+        }
+
+        // Prevent duplicate additional emails
+        if (
+          customer.additionalEmails &&
+          customer.additionalEmails.includes(trimmedEmail)
+        ) {
+          return res.status(400).json({
+            message: "This email address has already been added.",
+          });
+        }
+
+        // Add the email
+        if (!customer.additionalEmails) {
+          customer.additionalEmails = [];
+        }
+        customer.additionalEmails.push(trimmedEmail);
+      }
 
       await customer.save();
 
@@ -83,6 +129,7 @@ router.patch(
           lastName: customer.lastName,
           email: customer.email,
           preferredName: customer.preferredName,
+          additionalEmails: customer.additionalEmails,
         },
       });
     } catch (error) {

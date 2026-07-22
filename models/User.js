@@ -30,6 +30,9 @@ const userSchema = new mongoose.Schema(
     // --- Profile Overrides ---
     preferredName: { type: String, trim: true, default: undefined },
 
+    // --- Additional Emails ---
+    additionalEmails: { type: [String], default: [] },
+
     // --- Tracking & Limits ---
     lastFourDigits: { type: String, trim: true }, // Simple search marker
     role: {
