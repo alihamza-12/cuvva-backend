@@ -28,7 +28,7 @@ router.get(
 
       const customer = await User.findById(req.user._id)
         .select(
-          "fullName email role status expiresAt createdBy createdAt preferredName additionalEmails",
+          "fullName email phone role status expiresAt createdBy createdAt preferredName additionalEmails",
         )
         .lean();
 
@@ -57,9 +57,13 @@ router.patch(
   authorizeRoles("Customer"),
   async (req, res, next) => {
     try {
-      const { preferredName, additionalEmail } = req.body || {};
+      const { preferredName, additionalEmail, phone } = req.body || {};
 
-      if (preferredName === undefined && additionalEmail === undefined) {
+      if (
+        preferredName === undefined &&
+        additionalEmail === undefined &&
+        phone === undefined
+      ) {
         return res.status(400).json({ message: "No update fields provided." });
       }
 
@@ -116,6 +120,16 @@ router.patch(
           customer.additionalEmails = [];
         }
         customer.additionalEmails.push(trimmedEmail);
+      }
+
+      if (phone !== undefined) {
+        const trimmedPhone = typeof phone === "string" ? phone.trim() : "";
+
+        if (!trimmedPhone) {
+          return res.status(400).json({ message: "Phone number is required." });
+        }
+
+        customer.phone = trimmedPhone;
       }
 
       await customer.save();
