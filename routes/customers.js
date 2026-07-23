@@ -28,7 +28,7 @@ router.get(
 
       const customer = await User.findById(req.user._id)
         .select(
-          "fullName email phone role status expiresAt createdBy createdAt preferredName additionalEmails",
+          "fullName email phone dateOfBirth gender drivingLicenceNumber role status expiresAt createdBy createdAt preferredName additionalEmails",
         )
         .lean();
 

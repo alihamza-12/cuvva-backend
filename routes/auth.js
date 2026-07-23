@@ -32,8 +32,17 @@ router.post(
   authorizeRoles("Super Admin", "Sub Admin"),
   async (req, res, next) => {
     try {
-      const { fullName, email, password, role, expiresAt, durationDays } =
-        req.body;
+      const {
+        fullName,
+        email,
+        password,
+        role,
+        expiresAt,
+        durationDays,
+        dateOfBirth,
+        gender,
+        drivingLicenceNumber,
+      } = req.body;
 
       if (role === "Super Admin") {
         return res.status(400).json({
@@ -53,6 +62,26 @@ router.post(
         return res
           .status(400)
           .json({ message: "All registration fields are required" });
+      }
+
+      // When creating a Customer, the identity fields are required
+      if (role === "Customer") {
+        if (!dateOfBirth) {
+          return res.status(400).json({
+            message: "Date of birth is required for Customer accounts.",
+          });
+        }
+        if (!gender) {
+          return res
+            .status(400)
+            .json({ message: "Gender is required for Customer accounts." });
+        }
+        if (!drivingLicenceNumber) {
+          return res.status(400).json({
+            message:
+              "Driving licence number is required for Customer accounts.",
+          });
+        }
       }
 
       const userExists = await User.findOne({ email: email.toLowerCase() });
@@ -83,6 +112,10 @@ router.post(
         status: "Active",
         createdBy: req.user._id,
         expiresAt: calculatedExpiry,
+        dateOfBirth: role === "Customer" ? dateOfBirth : undefined,
+        gender: role === "Customer" ? gender : undefined,
+        drivingLicenceNumber:
+          role === "Customer" ? drivingLicenceNumber : undefined,
       });
 
       await newUser.save();

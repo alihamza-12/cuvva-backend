@@ -16,6 +16,12 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true },
     phone: { type: String, trim: true },
     dateOfBirth: { type: Date },
+    gender: {
+      type: String,
+      trim: true,
+      enum: ["Male", "Female", "Other", "Prefer not to say"],
+    },
+    drivingLicenceNumber: { type: String, trim: true },
 
     // --- Flat Address Format (No nested sub-schemas) ---
     address: {
