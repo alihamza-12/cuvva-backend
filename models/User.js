@@ -35,6 +35,7 @@ const userSchema = new mongoose.Schema(
 
     // --- Profile Overrides ---
     preferredName: { type: String, trim: true, default: undefined },
+    profilePhotoUrl: { type: String, trim: true, default: null },
 
     // --- Additional Emails ---
     additionalEmails: { type: [String], default: [] },

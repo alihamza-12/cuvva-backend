@@ -28,7 +28,7 @@ router.get(
 
       const customer = await User.findById(req.user._id)
         .select(
-          "fullName email phone dateOfBirth gender drivingLicenceNumber role status expiresAt createdBy createdAt preferredName additionalEmails",
+          "fullName email phone dateOfBirth gender drivingLicenceNumber role status expiresAt createdBy createdAt preferredName additionalEmails profilePhotoUrl",
         )
         .lean();
 
@@ -48,7 +48,8 @@ router.get(
 
 // =========================================================================
 // @route   PATCH /api/customers/me
-// @desc    Self-service: Customer updates their own preferredName or adds additional email
+// @desc    Self-service: Customer updates their own preferredName, adds
+//          additional email, updates phone, or updates profilePhotoUrl
 // @access  Protected (Customer Only)
 // =========================================================================
 router.patch(
@@ -57,12 +58,14 @@ router.patch(
   authorizeRoles("Customer"),
   async (req, res, next) => {
     try {
-      const { preferredName, additionalEmail, phone } = req.body || {};
+      const { preferredName, additionalEmail, phone, profilePhotoUrl } =
+        req.body || {};
 
       if (
         preferredName === undefined &&
         additionalEmail === undefined &&
-        phone === undefined
+        phone === undefined &&
+        profilePhotoUrl === undefined
       ) {
         return res.status(400).json({ message: "No update fields provided." });
       }
@@ -132,6 +135,23 @@ router.patch(
         customer.phone = trimmedPhone;
       }
 
+      if (profilePhotoUrl !== undefined) {
+        if (typeof profilePhotoUrl !== "string" || !profilePhotoUrl.trim()) {
+          return res
+            .status(400)
+            .json({ message: "Profile photo URL must be a non-empty string." });
+        }
+
+        if (!profilePhotoUrl.startsWith("https://res.cloudinary.com/")) {
+          return res.status(400).json({
+            message:
+              "Profile photo URL must be a valid Cloudinary-hosted image link.",
+          });
+        }
+
+        customer.profilePhotoUrl = profilePhotoUrl;
+      }
+
       await customer.save();
 
       return res.status(200).json({
@@ -142,8 +162,10 @@ router.patch(
           firstName: customer.firstName,
           lastName: customer.lastName,
           email: customer.email,
+          phone: customer.phone,
           preferredName: customer.preferredName,
           additionalEmails: customer.additionalEmails,
+          profilePhotoUrl: customer.profilePhotoUrl,
         },
       });
     } catch (error) {
