@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema(
   {
@@ -72,6 +73,29 @@ userSchema.pre("save", function (next) {
     this.lastName = parts.slice(1).join(" ") || "";
   }
   next();
+});
+
+// --- Password Hashing Helper ---
+// Centralizes bcrypt hashing so passwords are ALWAYS stored hashed
+// regardless of which admin flow creates/updates/resets them.
+userSchema.pre("save", async function (next) {
+  // Only hash if the password field was actually modified (new or changed)
+  if (!this.isModified("password")) {
+    return next();
+  }
+
+  // Guard: never re-hash an already-hashed bcrypt string
+  if (this.password && this.password.startsWith("$2")) {
+    return next();
+  }
+
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    return next();
+  } catch (err) {
+    return next(err);
+  }
 });
 
 // High-speed index keys

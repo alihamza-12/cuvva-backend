@@ -321,10 +321,8 @@ router.patch(
             .json({ message: "Password must be at least 6 characters." });
         }
 
-        const bcrypt = require("bcryptjs");
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-        targetUser.password = hashedPassword;
+        // Assign the plain password; the User pre('save') hook hashes it.
+        targetUser.password = password;
       }
 
       await targetUser.save();

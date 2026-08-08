@@ -58,7 +58,7 @@ router.post(
         });
       }
 
-      if (!fullName || !email || !password || !role) {
+      if (!fullName || !email || !role) {
         return res
           .status(400)
           .json({ message: "All registration fields are required" });
@@ -91,8 +91,10 @@ router.post(
           .json({ message: "User already exists with this email" });
       }
 
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(password, salt);
+      // Use the provided password, or fall back to a temporary default so the
+      // created account always has a working login. The User pre('save') hook
+      // will hash it securely before persisting.
+      const plainPassword = password || "Cuvva@123";
 
       let calculatedExpiry = null;
       if (durationDays) {
@@ -107,7 +109,7 @@ router.post(
       const newUser = new User({
         fullName,
         email: email.toLowerCase(),
-        password: hashedPassword,
+        password: plainPassword,
         role,
         status: "Active",
         createdBy: req.user._id,
