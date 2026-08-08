@@ -4,6 +4,9 @@ const Policy = require("../models/Policy");
 const Vehicle = require("../models/Vehicle");
 const User = require("../models/User");
 
+// --- Email Utility Import ---
+const { sendPolicyEmail } = require("../utils/sendEmail");
+
 // --- Auth Middleware Import ---
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 
@@ -138,6 +141,43 @@ router.post(
         internalNotes,
         createdBy: req.user._id, // Capture working Admin/Sub-Admin account session tracking
       });
+
+      // ========================================================
+      // 📧 SEND POLICY EMAIL (Non-blocking — fired after save)
+      // ========================================================
+      try {
+        // 1. Prepare the data object required by the email template
+        const emailData = {
+          customerFirstName: targetCustomer.firstName || "there",
+          customerFullName: `${targetCustomer.firstName} ${targetCustomer.lastName}`,
+          vehicleMake: targetVehicle.make,
+          vehicleModel: targetVehicle.model,
+          registration: targetVehicle.registration,
+          // Format dates to look like "5 Jun, 10:00 am"
+          startDateStr: new Date(newPolicy.startDate).toLocaleString("en-GB", {
+            day: "numeric",
+            month: "short",
+            hour: "numeric",
+            minute: "2-digit",
+          }),
+          endDateStr: new Date(newPolicy.endDate).toLocaleString("en-GB", {
+            hour: "numeric",
+            minute: "2-digit",
+          }),
+          duration: "1 hour", // Static or dynamic based on policy
+          price: (newPolicy.premiumAmount / 100).toFixed(2), // premiumAmount stored in pence
+          cardBrand: "Card",
+          cardLast4: "0000", // No payment data captured in this flow
+          policyNumber: newPolicy.policyNumber || newPolicy._id.toString(),
+        };
+
+        // 2. Fire the email function (DO NOT use 'await' so the admin API response isn't delayed)
+        sendPolicyEmail(targetCustomer.email, emailData);
+      } catch (emailError) {
+        // Log the error, but DO NOT throw it. The policy was created successfully in the DB,
+        // so we don't want to fail the API request just because the email failed.
+        console.error("Failed to send policy email:", emailError);
+      }
 
       return res.status(201).json({
         success: true,
