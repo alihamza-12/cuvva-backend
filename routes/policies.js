@@ -148,8 +148,8 @@ router.post(
       try {
         // 1. Prepare the data object required by the email template
         const emailData = {
-          customerFirstName: targetCustomer.firstName || "there",
-          customerFullName: `${targetCustomer.firstName} ${targetCustomer.lastName}`,
+          customerFullName: targetCustomer.fullName || "Valued Customer",
+          customerFirstName: (targetCustomer.fullName || "there").split(" ")[0],
           vehicleMake: targetVehicle.make,
           vehicleModel: targetVehicle.model,
           registration: targetVehicle.registration,
