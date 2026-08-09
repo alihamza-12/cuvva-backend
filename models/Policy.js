@@ -24,7 +24,7 @@ const policySchema = new mongoose.Schema(
     }, // The Broker/Admin who issued the policy
 
     // --- Calculations & Calendars ---
-    premiumAmount: { type: Number, required: true }, // Stored as pence/cents (£34.50 = 3450)
+    premiumAmount: { type: Number, required: true }, // Stored as direct decimal pounds (£123.44 = 123.44)
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
     startTime: { type: String, required: true }, // E.g., "14:30"

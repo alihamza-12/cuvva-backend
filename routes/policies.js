@@ -165,7 +165,7 @@ router.post(
             minute: "2-digit",
           }),
           duration: "1 hour", // Static or dynamic based on policy
-          price: (newPolicy.premiumAmount / 100).toFixed(2), // premiumAmount stored in pence
+          price: Number(newPolicy.premiumAmount).toFixed(2), // premiumAmount stored as direct decimal pounds
           cardBrand: "Card",
           cardLast4: "0000", // No payment data captured in this flow
           policyNumber: newPolicy.policyNumber || newPolicy._id.toString(),

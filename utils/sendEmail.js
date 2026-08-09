@@ -27,7 +27,8 @@ const LINKS = {
   tiktok: "https://www.tiktok.com/@cuvva",
   linkedin: "https://www.linkedin.com/company/cuvva",
   youtube: "https://www.youtube.com/channel/UCsZp91HBPsRlKyIitgZbVEA",
-  registeredOffice: "https://maps.google.com/?q=4th+Floor+Old+Sessions+House+23+Clerkenwell+Green+London+EC1R+0NA",
+  registeredOffice:
+    "https://maps.google.com/?q=4th+Floor+Old+Sessions+House+23+Clerkenwell+Green+London+EC1R+0NA",
 };
 
 // ────────────────────────────────────────────────────────────────────────
@@ -42,30 +43,76 @@ const sendPolicyEmail = async (userEmail, policyData) => {
       // PDFs
       {
         filename: "Policy details and certificate.pdf",
-        content: fs.readFileSync(path.join(pdfDir, "Policy details and certificate.pdf")),
+        content: fs.readFileSync(
+          path.join(pdfDir, "Policy details and certificate.pdf"),
+        ),
         contentType: "application/pdf",
       },
       {
         filename: "Policy wording (full terms).pdf",
-        content: fs.readFileSync(path.join(pdfDir, "Policy wording (full terms).pdf")),
+        content: fs.readFileSync(
+          path.join(pdfDir, "Policy wording (full terms).pdf"),
+        ),
         contentType: "application/pdf",
       },
       {
         filename: "Insurance summary (IPID).pdf",
-        content: fs.readFileSync(path.join(pdfDir, "Insurance summary (IPID).pdf")),
+        content: fs.readFileSync(
+          path.join(pdfDir, "Insurance summary (IPID).pdf"),
+        ),
         contentType: "application/pdf",
       },
       // Embedded images (referenced via cid: in the HTML below)
-      { filename: "cuvva-logo.png", path: path.join(imgDir, "cuvva-logo.png"), cid: "cuvvaLogo" },
-      { filename: "app-store-badge.png", path: path.join(imgDir, "app-store-badge.png"), cid: "appStoreBadge" },
-      { filename: "google-play-badge.png", path: path.join(imgDir, "google-play-badge.png"), cid: "googlePlayBadge" },
-      { filename: "icon-x.png", path: path.join(imgDir, "icon-x.png"), cid: "iconX" },
-      { filename: "icon-facebook.png", path: path.join(imgDir, "icon-facebook.png"), cid: "iconFacebook" },
-      { filename: "icon-instagram.png", path: path.join(imgDir, "icon-instagram.png"), cid: "iconInstagram" },
-      { filename: "icon-tiktok.png", path: path.join(imgDir, "icon-tiktok.png"), cid: "iconTiktok" },
-      { filename: "icon-linkedin.png", path: path.join(imgDir, "icon-linkedin.png"), cid: "iconLinkedin" },
-      { filename: "icon-youtube.png", path: path.join(imgDir, "icon-youtube.png"), cid: "iconYoutube" },
-      { filename: "icon-mastercard.png", path: path.join(imgDir, "icon-mastercard.png"), cid: "iconMastercard" },
+      {
+        filename: "cuvva-logo.png",
+        path: path.join(imgDir, "cuvva-logo.png"),
+        cid: "cuvvaLogo",
+      },
+      {
+        filename: "app-store-badge.png",
+        path: path.join(imgDir, "app-store-badge.png"),
+        cid: "appStoreBadge",
+      },
+      {
+        filename: "google-play-badge.png",
+        path: path.join(imgDir, "google-play-badge.png"),
+        cid: "googlePlayBadge",
+      },
+      {
+        filename: "icon-x.png",
+        path: path.join(imgDir, "icon-x.png"),
+        cid: "iconX",
+      },
+      {
+        filename: "icon-facebook.png",
+        path: path.join(imgDir, "icon-facebook.png"),
+        cid: "iconFacebook",
+      },
+      {
+        filename: "icon-instagram.png",
+        path: path.join(imgDir, "icon-instagram.png"),
+        cid: "iconInstagram",
+      },
+      {
+        filename: "icon-tiktok.png",
+        path: path.join(imgDir, "icon-tiktok.png"),
+        cid: "iconTiktok",
+      },
+      {
+        filename: "icon-linkedin.png",
+        path: path.join(imgDir, "icon-linkedin.png"),
+        cid: "iconLinkedin",
+      },
+      {
+        filename: "icon-youtube.png",
+        path: path.join(imgDir, "icon-youtube.png"),
+        cid: "iconYoutube",
+      },
+      {
+        filename: "icon-mastercard.png",
+        path: path.join(imgDir, "icon-mastercard.png"),
+        cid: "iconMastercard",
+      },
     ];
 
     const html = buildPolicyEmailHtml(policyData);
@@ -192,7 +239,7 @@ function buildPolicyEmailHtml(p) {
 
                 ${divider}
 
-                ${row("Total cost", `&pound;${p.price}`, true)}
+${row("Total cost", `&pound;${Number(p.price).toFixed(2)}`, true)}
 
                 <tr>
                   <td colspan="2" style="padding:4px 0 20px 0;">
