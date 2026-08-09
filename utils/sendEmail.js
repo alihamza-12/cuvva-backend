@@ -139,16 +139,16 @@ function buildPolicyEmailHtml(p) {
   [data-ogsc] .force-text { color:#151517 !important; }
 </style>
 </head>
-<body class="force-bg" style="margin:0; padding:0; background-color:#f4f4f5;">
+<body class="force-bg" style="margin:0; padding:0; background-color:#ffffff;">
   <div style="display:none; max-height:0; overflow:hidden; opacity:0;">
     Your Cuvva policy ${p.policyNumber} — ${p.vehicleMake} ${p.vehicleModel} · ${p.registration}
   </div>
 
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f4f4f5" style="background-color:#f4f4f5;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="background-color:#ffffff;">
     <tr>
-      <td align="center" style="padding:24px 12px;">
+      <td align="center" style="padding:0;">
 
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" class="force-bg" style="width:600px; max-width:100%; background-color:#ffffff; border-radius:8px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" class="force-bg" style="width:100%; max-width:600px; background-color:#ffffff;">
 
           <!-- Logo -->
           <tr>
@@ -256,7 +256,7 @@ function buildPolicyEmailHtml(p) {
 
           <!-- Footer -->
           <tr>
-            <td style="padding:16px 40px 40px 40px; border-top:1px solid #f0f0f0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+            <td style="padding:16px 40px 12px 40px; border-top:1px solid #f0f0f0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
 
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
@@ -303,7 +303,7 @@ function buildPolicyEmailHtml(p) {
 
                 <!-- App badges -->
                 <tr>
-                  <td style="padding:0;">
+                  <td style="padding:0 0 4px 0;">
                     <a href="${LINKS.appStore}" style="display:block; text-decoration:none; margin-bottom:12px; width:135px;">
                       <img src="cid:appStoreBadge" width="135" alt="Download on the App Store" style="display:block; border:0; height:auto;" />
                     </a>
