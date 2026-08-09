@@ -4,15 +4,10 @@ const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 
 const router = express.Router();
 
-// =========================================================================
-// @route   GET /api/customers/me
-// @desc    Get the currently authenticated Customer's own profile
-// @access  Protected (Customer Only)
-// =========================================================================
 router.get(
   "/me",
   (req, res, next) => {
-    // Debug: confirm middleware chain can read cookie at the very start
+
     console.log("[customers:/me] cookies at entry:", req.cookies);
     next();
   },
@@ -46,12 +41,6 @@ router.get(
   },
 );
 
-// =========================================================================
-// @route   PATCH /api/customers/me
-// @desc    Self-service: Customer updates their own preferredName, adds
-//          additional email, updates phone, or updates profilePhotoUrl
-// @access  Protected (Customer Only)
-// =========================================================================
 router.patch(
   "/me",
   verifyJWT,
@@ -93,7 +82,6 @@ router.patch(
             .json({ message: "Email address is required." });
         }
 
-        // Simple email format validation
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(trimmedEmail)) {
           return res
@@ -101,14 +89,12 @@ router.patch(
             .json({ message: "Please provide a valid email address." });
         }
 
-        // Prevent adding the primary email as an additional email
         if (trimmedEmail === customer.email) {
           return res.status(400).json({
             message: "This is already your main email address.",
           });
         }
 
-        // Prevent duplicate additional emails
         if (
           customer.additionalEmails &&
           customer.additionalEmails.includes(trimmedEmail)
@@ -118,7 +104,6 @@ router.patch(
           });
         }
 
-        // Add the email
         if (!customer.additionalEmails) {
           customer.additionalEmails = [];
         }
@@ -174,11 +159,6 @@ router.patch(
   },
 );
 
-// =========================================================================
-// @route   GET /api/customers
-// @desc    Get Customers List (Super Admin gets all, Sub Admin gets only theirs)
-// @access  Protected (Super Admin & Sub Admin Only)
-// =========================================================================
 router.get(
   "/",
   verifyJWT,
@@ -192,7 +172,6 @@ router.get(
     try {
       let queryFilter = { role: "Customer" };
 
-      // RULE ENFORCEMENT: If the logged-in user is a Sub Admin, restrict findings to their own created clients
       if (req.user.role === "Sub Admin") {
         queryFilter.createdBy = req.user._id;
       }
@@ -213,11 +192,6 @@ router.get(
   },
 );
 
-// =========================================================================
-// @route   GET /api/customers/:id
-// @desc    Get Single Customer Detail with populated ownership metadata
-// @access  Protected (Super Admin & Sub Admin Only)
-// =========================================================================
 router.get(
   "/:id",
   verifyJWT,
@@ -235,7 +209,6 @@ router.get(
         return res.status(404).json({ message: "Customer account not found" });
       }
 
-      // SECURITY GUARD: Prevent a Sub Admin from viewing a customer they did not create
       if (
         req.user.role === "Sub Admin" &&
         customer.createdBy &&
@@ -257,11 +230,6 @@ router.get(
   },
 );
 
-// =========================================================================
-// @route   PATCH /api/customers/:id
-// @desc    Update full Customer profile (Sub Admin with ownership guard, Super Admin allowed)
-// @access  Protected (Super Admin & Sub Admin Only)
-// =========================================================================
 router.patch(
   "/:id",
   verifyJWT,
@@ -289,7 +257,6 @@ router.patch(
         return res.status(403).json({ message: "Forbidden: Not a Customer." });
       }
 
-      // Sub Admin ownership guard: can only modify customers they created
       if (req.user.role === "Sub Admin") {
         if (
           !targetUser.createdBy ||
@@ -321,7 +288,6 @@ router.patch(
             .json({ message: "Password must be at least 6 characters." });
         }
 
-        // Assign the plain password; the User pre('save') hook hashes it.
         targetUser.password = password;
       }
 

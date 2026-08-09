@@ -5,32 +5,30 @@ const {
 
 const policySchema = new mongoose.Schema(
   {
-    // --- Core Identification & Links ---
+
     policyNumber: { type: String, unique: true },
     customerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-    }, // The Customer buying/borrowing the car
+    }, 
     vehicleId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Vehicle",
       required: true,
-    }, // The specific car being covered
+    }, 
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-    }, // The Broker/Admin who issued the policy
+    }, 
 
-    // --- Calculations & Calendars ---
-    premiumAmount: { type: Number, required: true }, // Stored as direct decimal pounds (£123.44 = 123.44)
+    premiumAmount: { type: Number, required: true }, 
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
-    startTime: { type: String, required: true }, // E.g., "14:30"
-    endTime: { type: String, required: true }, // E.g., "15:30"
+    startTime: { type: String, required: true }, 
+    endTime: { type: String, required: true }, 
 
-    // --- Contract Categorization ---
     policyType: {
       type: String,
       enum: [
@@ -64,7 +62,6 @@ const policySchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// --- Developer Smart Helper ---
 policySchema.pre("save", async function (next) {
   try {
     if (!this.policyNumber || !this.policyNumber.trim()) {
@@ -82,7 +79,6 @@ policySchema.pre("save", async function (next) {
   }
 });
 
-// High-speed index keys
 policySchema.index({ customerId: 1, status: 1 });
 policySchema.index({ vehicleId: 1 });
 policySchema.index({ createdBy: 1 });

@@ -2,27 +2,25 @@ const mongoose = require("mongoose");
 
 const vehicleSchema = new mongoose.Schema(
   {
-    // --- Relational Links & Audit ---
+
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-    }, // The Super Admin or Sub-Admin who manually added this car to the system
+    }, 
 
-    // --- Core Identity ---
     registration: {
       type: String,
       required: true,
-      unique: true, // Prevents admins from adding the same plate twice
+      unique: true, 
       uppercase: true,
       trim: true,
-    }, // UK Plate Number (e.g., "BD55SMR")
+    }, 
     make: { type: String, required: true, trim: true },
     model: { type: String, required: true, trim: true },
     colour: { type: String, trim: true },
     year: { type: Number, required: true },
 
-    // --- Technical Specifications ---
     fuelType: {
       type: String,
       enum: ["PETROL", "DIESEL", "ELECTRIC", "HYBRID"],
@@ -34,7 +32,6 @@ const vehicleSchema = new mongoose.Schema(
     cylinders: { type: Number },
     fuelConsumptionMPG: { type: Number },
 
-    // --- DVLA Compliance Status (Manually Managed) ---
     motStatus: { type: String, default: "Valid" },
     motExpiryDate: { type: Date },
     taxStatus: { type: String, default: "Paid" },
@@ -47,7 +44,5 @@ const vehicleSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
-
-
 
 module.exports = mongoose.model("Vehicle", vehicleSchema);

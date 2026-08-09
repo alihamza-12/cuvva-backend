@@ -14,8 +14,6 @@ const seedSuperAdmin = async () => {
 
     const hashedPassword = await bcrypt.hash("SuperAdminPass2026!", 10);
 
-    // console.log(hashedPassword);
-
     await User.create({
       fullName: "Super Admin",
       email: "superadmin@cuvvaclone.com",

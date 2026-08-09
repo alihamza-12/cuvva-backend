@@ -1,13 +1,9 @@
 const jwt = require("jsonwebtoken");
-const User = require("../models/User"); // Required to check roles and temporal constraints in real-time
+const User = require("../models/User"); 
 
-/**
- * Global Identity & Authentication Guard (Cookie-Based)
- * Verifies JWT token stored in secure cookies and checks for account suspension or sub-admin expiry status.
- */
 async function verifyJWT(req, res, next) {
   try {
-    // 1. Extract the token directly from cookies parsed by cookie-parser
+
     const token = req.cookies ? req.cookies.accessToken : null;
 
     if (!token) {
@@ -18,10 +14,8 @@ async function verifyJWT(req, res, next) {
         });
     }
 
-    // 2. Verify the structural integrity of the cookie token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // 3. Query database for real-time account status fields
     const user = await User.findById(decoded.id).select("-password");
     if (!user) {
       return res
@@ -29,14 +23,12 @@ async function verifyJWT(req, res, next) {
         .json({ message: "Session invalid: User record no longer exists" });
     }
 
-    // 4. Rule Enforcement: Block suspended users immediately
     if (user.status === "Suspended") {
       return res
         .status(403)
         .json({ message: "Access Denied: Your account has been suspended" });
     }
 
-    // 5. Rule Enforcement: Enforce temporal expiry limits for Sub Admins
     if (
       user.role === "Sub Admin" &&
       user.expiresAt &&
@@ -47,7 +39,6 @@ async function verifyJWT(req, res, next) {
       });
     }
 
-    // Attach full validated user document to the request object for downstream controllers
     req.user = user;
     return next();
   } catch (err) {
@@ -57,11 +48,6 @@ async function verifyJWT(req, res, next) {
   }
 }
 
-/**
- * Role-Based Access Control (RBAC) Gatekeeper
- * Evaluates whether the authenticated user possesses the specific clearances to proceed.
- * Usage: authorizeRoles("Super Admin", "Sub Admin")
- */
 function authorizeRoles(...allowedRoles) {
   return (req, res, next) => {
     if (!req.user) {
@@ -70,7 +56,6 @@ function authorizeRoles(...allowedRoles) {
       });
     }
 
-    // Enforce role comparison checks against allowed array elements
     if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({
         message: `Forbidden: Your account role (${req.user.role}) is unauthorized to access this endpoint`,

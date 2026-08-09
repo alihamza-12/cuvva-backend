@@ -1,7 +1,4 @@
-/**
- * Pure helper creating formatting sequences for policy numbers.
- * Format: POL-YYYY-XXXXX
- */
+
 function padLeft(num, width) {
   const s = String(num);
   if (s.length >= width) return s;

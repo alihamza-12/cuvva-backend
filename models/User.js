@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema(
   {
-    // --- Account Basics ---
+
     fullName: { type: String, required: true, trim: true },
     firstName: { type: String },
     lastName: { type: String },
@@ -24,7 +24,6 @@ const userSchema = new mongoose.Schema(
     },
     drivingLicenceNumber: { type: String, trim: true },
 
-    // --- Flat Address Format (No nested sub-schemas) ---
     address: {
       line1: String,
       line2: String,
@@ -34,15 +33,12 @@ const userSchema = new mongoose.Schema(
       country: { type: String, default: "UK" },
     },
 
-    // --- Profile Overrides ---
     preferredName: { type: String, trim: true, default: undefined },
     profilePhotoUrl: { type: String, trim: true, default: null },
 
-    // --- Additional Emails ---
     additionalEmails: { type: [String], default: [] },
 
-    // --- Tracking & Limits ---
-    lastFourDigits: { type: String, trim: true }, // Simple search marker
+    lastFourDigits: { type: String, trim: true }, 
     role: {
       type: String,
       enum: ["Super Admin", "Sub Admin", "Customer"],
@@ -53,10 +49,9 @@ const userSchema = new mongoose.Schema(
       enum: ["Active", "Suspended"],
       default: "Active",
     },
-    expiresAt: { type: Date, default: null }, // Time limit for Sub-Admins
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // Tracks ownership chain
+    expiresAt: { type: Date, default: null }, 
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, 
 
-    // --- Security Passports ---
     refreshTokens: [String],
     resetToken: String,
     resetExpires: Date,
@@ -64,8 +59,6 @@ const userSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// --- Developer Smart Helper ---
-// Automatically splits "Jane Sarah Doe" into "Jane" and "Sarah Doe" before saving
 userSchema.pre("save", function (next) {
   if (this.isModified("fullName") && this.fullName) {
     const parts = this.fullName.trim().split(/\s+/);
@@ -75,16 +68,12 @@ userSchema.pre("save", function (next) {
   next();
 });
 
-// --- Password Hashing Helper ---
-// Centralizes bcrypt hashing so passwords are ALWAYS stored hashed
-// regardless of which admin flow creates/updates/resets them.
 userSchema.pre("save", async function (next) {
-  // Only hash if the password field was actually modified (new or changed)
+
   if (!this.isModified("password")) {
     return next();
   }
 
-  // Guard: never re-hash an already-hashed bcrypt string
   if (this.password && this.password.startsWith("$2")) {
     return next();
   }
@@ -97,8 +86,6 @@ userSchema.pre("save", async function (next) {
     return next(err);
   }
 });
-
-// High-speed index keys
 
 userSchema.index({ role: 1, status: 1 });
 userSchema.index({ createdBy: 1 });

@@ -2,9 +2,6 @@ const nodemailer = require("nodemailer");
 const fs = require("fs");
 const path = require("path");
 
-// ────────────────────────────────────────────────────────────────────────
-// 1. Transporter
-// ────────────────────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -13,10 +10,6 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// ────────────────────────────────────────────────────────────────────────
-// 2. Official Cuvva links (verified against cuvva.com footer, Aug 2026)
-//    Swap these for YOUR app's own links once you have real store listings.
-// ────────────────────────────────────────────────────────────────────────
 const LINKS = {
   support: "mailto:support@cuvva.com",
   appStore: "https://cuvvaapp.onelink.me/6DCd/jve0ulrz",
@@ -31,16 +24,13 @@ const LINKS = {
     "https://maps.google.com/?q=4th+Floor+Old+Sessions+House+23+Clerkenwell+Green+London+EC1R+0NA",
 };
 
-// ────────────────────────────────────────────────────────────────────────
-// 3. Build & send the email
-// ────────────────────────────────────────────────────────────────────────
 const sendPolicyEmail = async (userEmail, policyData) => {
   try {
     const pdfDir = path.join(__dirname, "..", "pdfs");
     const imgDir = path.join(__dirname, "..", "public", "email-assets");
 
     const attachments = [
-      // PDFs
+
       {
         filename: "Policy details and certificate.pdf",
         content: fs.readFileSync(
@@ -62,7 +52,7 @@ const sendPolicyEmail = async (userEmail, policyData) => {
         ),
         contentType: "application/pdf",
       },
-      // Embedded images (referenced via cid: in the HTML below)
+
       {
         filename: "cuvva-logo.png",
         path: path.join(imgDir, "cuvva-logo.png"),
@@ -133,12 +123,8 @@ const sendPolicyEmail = async (userEmail, policyData) => {
   }
 };
 
-// ────────────────────────────────────────────────────────────────────────
-// 4. HTML builder — laid out to match the forwarded Cuvva screenshots
-//    (plain label/value rows, thin dividers, text links — not buttons)
-// ────────────────────────────────────────────────────────────────────────
 function buildPolicyEmailHtml(p) {
-  // small helper for a "label ... value" row
+
   const row = (label, value, bold = false) => `
     <tr>
       <td style="padding:0 0 10px 0; font-size:15px; line-height:1.5; color:#151517; font-weight:${bold ? "700" : "400"};" align="left">${label}</td>

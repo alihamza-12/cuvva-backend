@@ -4,11 +4,6 @@ const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 
 const router = express.Router();
 
-// ==========================================
-// @route   GET /api/management/subadmins
-// @desc    Get All Sub Admins across the platform
-// @access  Protected (Super Admin Only)
-// ==========================================
 router.get(
   "/subadmins",
   verifyJWT,
@@ -31,11 +26,6 @@ router.get(
   },
 );
 
-// ==========================================
-// @route   GET /api/management/customers
-// @desc    Get All Customers across the platform (Global overview with creator details)
-// @access  Protected (Super Admin Only)
-// ==========================================
 router.get(
   "/customers",
   verifyJWT,
@@ -57,11 +47,7 @@ router.get(
     }
   },
 );
-// ==========================================
-// @route   PATCH /api/management/status/:id
-// @desc    Hierarchical Status Engine (Toggle 'Active' / 'Suspended' States)
-// @access  Protected (Super Admin & Sub Admin Only)
-// ==========================================
+
 router.patch(
   "/status/:id",
   verifyJWT,
@@ -71,7 +57,6 @@ router.patch(
       const { id } = req.params;
       const { status } = req.body;
 
-      // 1. Validate status input against schema enum configurations
       if (!status || !["Active", "Suspended"].includes(status)) {
         return res.status(400).json({
           message:
@@ -79,7 +64,6 @@ router.patch(
         });
       }
 
-      // 2. Locate target user profile record in database cluster
       const targetUser = await User.findById(id);
       if (!targetUser) {
         return res.status(404).json({
@@ -87,7 +71,6 @@ router.patch(
         });
       }
 
-      // 3. Absolute Protection Guard: Super Admin records can NEVER be modified by endpoints
       if (targetUser.role === "Super Admin") {
         return res.status(403).json({
           message:
@@ -95,11 +78,8 @@ router.patch(
         });
       }
 
-      // ========================================================
-      // 4. HIERARCHICAL PERMISSION MATRIX ENFORCEMENT ENGINE
-      // ========================================================
       if (req.user.role === "Sub Admin") {
-        // LIMITATION A: Sub Admins cannot modify other Sub Admins
+
         if (targetUser.role !== "Customer") {
           return res.status(403).json({
             message:
@@ -107,7 +87,6 @@ router.patch(
           });
         }
 
-        // LIMITATION B: Sub Admins can only modify customers they personally registered
         if (
           !targetUser.createdBy ||
           targetUser.createdBy.toString() !== req.user._id.toString()
@@ -119,7 +98,6 @@ router.patch(
         }
       }
 
-      // 5. Commit status update transition to the cluster document
       targetUser.status = status;
       await targetUser.save();
 
@@ -135,16 +113,11 @@ router.patch(
         },
       });
     } catch (error) {
-      next(error); // Route pipeline failure smoothly into centralized error framework
+      next(error); 
     }
   },
 );
 
-// ==========================================
-// @route   GET /api/management/subadmins/:id
-// @desc    Get single Sub Admin by id
-// @access  Protected (Super Admin Only)
-// ==========================================
 router.get(
   "/subadmins/:id",
   verifyJWT,
@@ -172,11 +145,6 @@ router.get(
   },
 );
 
-// ==========================================
-// @route   PATCH /api/management/subadmins/:id
-// @desc    Update full Sub Admin profile (Super Admin only)
-// @access  Protected (Super Admin Only)
-// ==========================================
 router.patch(
   "/subadmins/:id",
   verifyJWT,
@@ -199,7 +167,6 @@ router.patch(
         return res.status(403).json({ message: "Forbidden: Not a Sub Admin." });
       }
 
-      // Update basic fields (allow email if provided)
       if (typeof fullName === "string" && fullName.trim()) {
         targetUser.fullName = fullName.trim();
       }
@@ -208,12 +175,10 @@ router.patch(
         targetUser.email = email.toLowerCase().trim();
       }
 
-      // Update expiry window (can be null to clear)
       if (expiresAt !== undefined) {
         targetUser.expiresAt = expiresAt ? new Date(expiresAt) : null;
       }
 
-      // Optional password update
       if (password !== undefined) {
         if (typeof password !== "string" || password.trim().length < 6) {
           return res.status(400).json({
@@ -221,7 +186,6 @@ router.patch(
           });
         }
 
-        // Assign the plain password; the User pre('save') hook hashes it.
         targetUser.password = password;
       }
 

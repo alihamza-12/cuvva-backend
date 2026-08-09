@@ -1,29 +1,22 @@
-// utils/cron/policyStatusUpdater.js
+
 const cron = require("node-cron");
 const Policy = require("../../models/Policy");
 
-/**
- * Background worker that automatically transitions policy statuses
- * based on the local machine's system date and time.
- */
 const updatePolicyStatuses = async () => {
   try {
     const now = new Date();
 
-    // 1. 🌍 Extract LOCAL Date fragments cleanly (forces your laptop's timezone date)
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0");
     const day = String(now.getDate()).padStart(2, "0");
-    const currentDateStr = `${year}-${month}-${day}`; // Evaluates correctly to "2026-06-17"
+    const currentDateStr = `${year}-${month}-${day}`; 
 
-    // 2. ⏱️ Extract LOCAL Time fragments cleanly
-    const currentTimeStr = now.toTimeString().split(" ")[0].substring(0, 5); // Evaluates to "01:51"
+    const currentTimeStr = now.toTimeString().split(" ")[0].substring(0, 5); 
 
     console.log(
       `⏱️ Running Background Status Check [${currentDateStr} ${currentTimeStr} LOCAL]...`,
     );
 
-    // --- TASK A: UPCOMING -> ACTIVE ---
     const activated = await Policy.updateMany(
       {
         status: "Upcoming",
@@ -38,7 +31,6 @@ const updatePolicyStatuses = async () => {
       { $set: { status: "Active" } },
     );
 
-    // --- TASK B: ACTIVE -> EXPIRED ---
     const expired = await Policy.updateMany(
       {
         status: "Active",
@@ -63,9 +55,6 @@ const updatePolicyStatuses = async () => {
   }
 };
 
-/**
- * Explicit initialization function called inside server.js
- */
 const startPolicyStatusUpdater = () => {
   cron.schedule("* * * * *", updatePolicyStatuses);
   console.log("[cron] Policy Status Automated Worker Scheduled Successfully.");

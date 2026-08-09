@@ -5,27 +5,20 @@ const User = require("../models/User");
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 const router = express.Router();
 
-// Helper function to resolve cookie options dynamically
 function getCookieOptions(req) {
   const isProduction = process.env.NODE_ENV === "production";
 
-  // 🚩 CRITICAL FIX FOR SERVERS RUNNING ON HTTP (no SSL/HTTPS)
-  // If the request is over HTTP (e.g. http://13.63.158.142), we MUST set secure: false.
-  // If we set secure: true over HTTP, the browser will silently discard the cookie!
   const isHTTPS = req.secure || req.headers["x-forwarded-proto"] === "https";
   const secureFlag = isProduction ? isHTTPS : false;
 
   return {
-    httpOnly: true, // Prevents client-side scripts (XSS) from reading the tokens
-    secure: secureFlag, // Enforces HTTPS only when the server is actually using HTTPS
-    sameSite: "lax", // "lax" is required instead of "strict" when frontend and backend have port differences (e.g. port 80 and port 3000)
+    httpOnly: true, 
+    secure: secureFlag, 
+    sameSite: "lax", 
     path: "/",
   };
 }
 
-// ==========================================
-// @route   POST /api/auth/register
-// ==========================================
 router.post(
   "/register",
   verifyJWT,
@@ -64,7 +57,6 @@ router.post(
           .json({ message: "All registration fields are required" });
       }
 
-      // When creating a Customer, the identity fields are required
       if (role === "Customer") {
         if (!dateOfBirth) {
           return res.status(400).json({
@@ -91,9 +83,6 @@ router.post(
           .json({ message: "User already exists with this email" });
       }
 
-      // Use the provided password, or fall back to a temporary default so the
-      // created account always has a working login. The User pre('save') hook
-      // will hash it securely before persisting.
       const plainPassword = password || "Cuvva@123";
 
       let calculatedExpiry = null;
@@ -139,9 +128,6 @@ router.post(
   },
 );
 
-// ==========================================
-// @route   POST /api/auth/login
-// ==========================================
 router.post("/login", async (req, res, next) => {
   try {
     const { email, password } = req.body;
@@ -205,17 +191,16 @@ router.post("/login", async (req, res, next) => {
     user.refreshTokens.push(refreshToken);
     await user.save();
 
-    // 🚩 FIX: Use dynamic cookie options that automatically adapt to HTTP/HTTPS
     const cookieOptions = getCookieOptions(req);
 
     res.cookie("accessToken", accessToken, {
       ...cookieOptions,
-      maxAge: 15 * 60 * 1000, // 15 minutes
+      maxAge: 15 * 60 * 1000, 
     });
 
     res.cookie("refreshToken", refreshToken, {
       ...cookieOptions,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000, 
     });
 
     if (user.role === "Customer") {
@@ -251,9 +236,6 @@ router.post("/login", async (req, res, next) => {
   }
 });
 
-// ==========================================
-// @route   POST /api/auth/logout
-// ==========================================
 router.post("/logout", verifyJWT, async (req, res, next) => {
   try {
     const refreshToken = req.cookies ? req.cookies.refreshToken : null;
@@ -264,7 +246,6 @@ router.post("/logout", verifyJWT, async (req, res, next) => {
       });
     }
 
-    // 🚩 FIX: Use dynamic cookie options
     const cookieOptions = getCookieOptions(req);
 
     res.clearCookie("accessToken", cookieOptions);
@@ -279,9 +260,6 @@ router.post("/logout", verifyJWT, async (req, res, next) => {
   }
 });
 
-// ==========================================
-// @route   POST /api/auth/refresh-token
-// ==========================================
 router.post("/refresh-token", async (req, res, next) => {
   try {
     const refreshToken = req.cookies ? req.cookies.refreshToken : null;
@@ -330,7 +308,6 @@ router.post("/refresh-token", async (req, res, next) => {
       { expiresIn: "15m" },
     );
 
-    // 🚩 FIX: Use dynamic cookie options
     const cookieOptions = getCookieOptions(req);
 
     res.cookie("accessToken", accessToken, {

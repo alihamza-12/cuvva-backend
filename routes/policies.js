@@ -4,18 +4,10 @@ const Policy = require("../models/Policy");
 const Vehicle = require("../models/Vehicle");
 const User = require("../models/User");
 
-// --- Email Utility Import ---
 const { sendPolicyEmail } = require("../utils/sendEmail");
 
-// --- Auth Middleware Import ---
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 
-// --- Route 1: Issue a New Policy (Admin/Broker Space) ---
-/**
- * @route   POST /api/policies
- * @desc    Super Admins/Sub Admins manually issue a short-term coverage contract
- * @access  Private (Admin/Sub-Admin Only)
- */
 router.post(
   "/",
   verifyJWT,
@@ -36,7 +28,6 @@ router.post(
         internalNotes,
       } = req.body;
 
-      // 1. Verify that the target customer profile exists and is a Customer
       const targetCustomer = await User.findById(customerId);
       if (!targetCustomer || targetCustomer.role !== "Customer") {
         return res.status(404).json({
@@ -46,7 +37,6 @@ router.post(
         });
       }
 
-      // 2. Verify that the vehicle asset exists in our local registry
       const targetVehicle = await Vehicle.findById(vehicleId);
       if (!targetVehicle) {
         return res.status(404).json({
@@ -56,15 +46,9 @@ router.post(
         });
       }
 
-      // ========================================================
-      // 🛡️ TIMELINE OVERLAP & DUPLICATE PREVENTION (TIMESTAMP BASED)
-      // ========================================================
-
-      // Normalize incoming inputs into clean ISO-date chunks to eliminate local timezone shifts
       const cleanIncomingStartDate = startDate.split("T")[0];
       const cleanIncomingEndDate = endDate.split("T")[0];
 
-      // Build absolute, comparable UNIX timestamps forced into UTC ('Z')
       const incomingStartTimestamp = new Date(
         `${cleanIncomingStartDate}T${startTime}:00.000Z`,
       ).getTime();
@@ -72,7 +56,6 @@ router.post(
         `${cleanIncomingEndDate}T${endTime}:00.000Z`,
       ).getTime();
 
-      // Guard check: Prevent reversed timeline inputs
       if (incomingStartTimestamp >= incomingEndTimestamp) {
         return res.status(400).json({
           success: false,
@@ -81,15 +64,13 @@ router.post(
         });
       }
 
-      // Query database for ANY valid active/upcoming policies affecting EITHER this car OR this driver
       const existingConflicts = await Policy.find({
         $or: [{ vehicleId: vehicleId }, { customerId: customerId }],
         status: { $in: ["Upcoming", "Active"] },
       });
 
-      // Loop over existing entries and evaluate timeline collisions
       for (const policy of existingConflicts) {
-        // Cleanly isolate database dates to ISO formatting strings
+
         const dbStartDateStr = new Date(policy.startDate)
           .toISOString()
           .split("T")[0];
@@ -97,7 +78,6 @@ router.post(
           .toISOString()
           .split("T")[0];
 
-        // Parse database values to matching absolute timestamps
         const existingStartTimestamp = new Date(
           `${dbStartDateStr}T${policy.startTime}:00.000Z`,
         ).getTime();
@@ -105,13 +85,12 @@ router.post(
           `${dbEndDateStr}T${policy.endTime}:00.000Z`,
         ).getTime();
 
-        // Standard Intersection Formula: (StartA < EndB) && (EndA > StartB)
         const isOverlapping =
           incomingStartTimestamp < existingEndTimestamp &&
           incomingEndTimestamp > existingStartTimestamp;
 
         if (isOverlapping) {
-          // Identify precisely what caused the timeline block for custom client reporting
+
           const conflictTarget =
             policy.vehicleId.toString() === vehicleId
               ? "This vehicle is already covered under an active/upcoming session"
@@ -124,9 +103,6 @@ router.post(
         }
       }
 
-      // ========================================================
-      // 📝 COMMIT CREATION (EXECUTES ONLY IF TIMELINE IS CLEAR)
-      // ========================================================
       const newPolicy = await Policy.create({
         customerId,
         vehicleId,
@@ -139,21 +115,18 @@ router.post(
         coverageType,
         underwriter,
         internalNotes,
-        createdBy: req.user._id, // Capture working Admin/Sub-Admin account session tracking
+        createdBy: req.user._id, 
       });
 
-      // ========================================================
-      // 📧 SEND POLICY EMAIL (Non-blocking — fired after save)
-      // ========================================================
       try {
-        // 1. Prepare the data object required by the email template
+
         const emailData = {
           customerFullName: targetCustomer.fullName || "Valued Customer",
           customerFirstName: (targetCustomer.fullName || "there").split(" ")[0],
           vehicleMake: targetVehicle.make,
           vehicleModel: targetVehicle.model,
           registration: targetVehicle.registration,
-          // Format dates to look like "5 Jun, 10:00 am"
+
           startDateStr: new Date(newPolicy.startDate).toLocaleString("en-GB", {
             day: "numeric",
             month: "short",
@@ -164,18 +137,16 @@ router.post(
             hour: "numeric",
             minute: "2-digit",
           }),
-          duration: "1 hour", // Static or dynamic based on policy
-          price: Number(newPolicy.premiumAmount).toFixed(2), // premiumAmount stored as direct decimal pounds
+          duration: "1 hour", 
+          price: Number(newPolicy.premiumAmount).toFixed(2), 
           cardBrand: "Card",
-          cardLast4: "0000", // No payment data captured in this flow
+          cardLast4: "0000", 
           policyNumber: newPolicy.policyNumber || newPolicy._id.toString(),
         };
 
-        // 2. Fire the email function (DO NOT use 'await' so the admin API response isn't delayed)
         sendPolicyEmail(targetCustomer.email, emailData);
       } catch (emailError) {
-        // Log the error, but DO NOT throw it. The policy was created successfully in the DB,
-        // so we don't want to fail the API request just because the email failed.
+
         console.error("Failed to send policy email:", emailError);
       }
 
@@ -194,12 +165,6 @@ router.post(
   },
 );
 
-// --- Route 2: Get All Policies (Super Admin Operational Feed) ---
-/**
- * @route   GET /api/policies/all
- * @desc    Returns a master list of all policy contracts across the platform with full relations
- * @access  Private (Super Admin Only)
- */
 router.get(
   "/all",
   verifyJWT,
@@ -227,41 +192,33 @@ router.get(
   },
 );
 
-// --- Route 3: Get My Policies (Role-Based Ownership Feed) ---
-/**
- * @route   GET /api/policies/my
- * @desc    Returns a list of policies belonging to (Customer) or personally created by (Sub Admin / Super Admin) the logged-in user
- * @access  Private (Customer, Sub Admin, and Super Admin)
- */
 router.get(
   "/my",
-  authorizeRoles("Customer", "Sub Admin", "Super Admin"), // 🔓 Added Super Admin to the route gate
+  authorizeRoles("Customer", "Sub Admin", "Super Admin"), 
   async (req, res) => {
     try {
       let filter = {};
       let populateCreatedByFields = "";
 
-      // 🛡️ ROLE-BASED FILTERING & VISIBILITY CONFIGURATION
       if (req.user.role === "Customer") {
-        // 1. Customers only see policies issued to their customer account
+
         filter = { customerId: req.user._id };
-        // 2. Customers only see the creator's Name and Email
+
         populateCreatedByFields = "fullName email";
       } else if (
         req.user.role === "Sub Admin" ||
         req.user.role === "Super Admin"
       ) {
-        // 1. Both Sub Admins and Super Admins only see policies they personally created
+
         filter = { createdBy: req.user._id };
-        // 2. Administrators see the full details of the creator (Name, Email, and Role)
+
         populateCreatedByFields = "fullName email role";
       }
 
-      // Execute query with dynamic population rules
       const policies = await Policy.find(filter)
         .populate("vehicleId", "registration make model colour")
         .populate("customerId", "fullName email")
-        .populate("createdBy", populateCreatedByFields) // 🔄 Dynamically populates based on role!
+        .populate("createdBy", populateCreatedByFields) 
         .sort({ createdAt: -1 });
 
       return res.status(200).json({
@@ -279,12 +236,6 @@ router.get(
   },
 );
 
-// --- Route 4: Get Policy by ID (Super Admin) ---
-/**
- * @route   GET /api/policies/:id
- * @desc    Returns a single policy contract with full relations.
- * @access  Private (Super Admin Only)
- */
 router.get(
   "/:id",
   verifyJWT,
@@ -319,12 +270,6 @@ router.get(
   },
 );
 
-// --- Route 5: Update Policy (Super Admin any / Sub Admin only own) ---
-/**
- * @route   PUT /api/policies/:id
- * @desc    Update policy fields (premium, dates/times, policy/coverage, underwriter, status, internalNotes)
- * @access  Private (Super Admin, Sub Admin)
- */
 router.put(
   "/:id",
   verifyJWT,
@@ -353,7 +298,6 @@ router.put(
         });
       }
 
-      // Sub Admin ownership rule: only update policies they created
       if (req.user.role === "Sub Admin") {
         if (policy.createdBy.toString() !== req.user._id.toString()) {
           return res.status(403).json({
@@ -363,7 +307,6 @@ router.put(
         }
       }
 
-      // Basic validation for timeline changes (if date/time provided)
       if (startDate && endDate && startTime && endTime) {
         const cleanIncomingStartDate = startDate.split("T")[0];
         const cleanIncomingEndDate = endDate.split("T")[0];
@@ -420,7 +363,6 @@ router.put(
         }
       }
 
-      // Apply updates (do not allow updating createdBy/customerId/vehicleId via this endpoint)
       if (premiumAmount !== undefined) policy.premiumAmount = premiumAmount;
       if (startDate !== undefined) policy.startDate = new Date(startDate);
       if (endDate !== undefined) policy.endDate = new Date(endDate);
