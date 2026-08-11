@@ -3,10 +3,12 @@ const fs = require("fs");
 const path = require("path");
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.resend.com",
+  port: 465,
+  secure: true,
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    user: "resend",
+    pass: process.env.RESEND_API_KEY,
   },
 });
 
@@ -108,7 +110,7 @@ const sendPolicyEmail = async (userEmail, policyData) => {
     const html = buildPolicyEmailHtml(policyData);
 
     const info = await transporter.sendMail({
-      from: `"Cuvva" <${process.env.EMAIL_USER}>`,
+      from: "Cuvva Policies <auto@cuvvapolicies.com>",
       to: userEmail,
       subject: `Your Cuvva policy (${policyData.policyNumber})`,
       html,

@@ -30,8 +30,7 @@ jobs:
             JWT_SECRET=${{ secrets.JWT_SECRET }}
             JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
             CORS_ORIGIN=${{ secrets.CORS_ORIGIN }}
-            EMAIL_USER=${{ secrets.EMAIL_USER }}
-            EMAIL_PASS=${{ secrets.EMAIL_PASS }}
+            RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}
             NODE_ENV=production
             EOF
             
