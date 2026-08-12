@@ -5,6 +5,7 @@ const Vehicle = require("../models/Vehicle");
 const User = require("../models/User");
 
 const { sendPolicyEmail } = require("../utils/sendEmail");
+const { normalizeTime } = require("../utils/normalizeTime");
 
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 
@@ -14,7 +15,7 @@ router.post(
   authorizeRoles("Super Admin", "Sub Admin"),
   async (req, res) => {
     try {
-      const {
+      let {
         customerId,
         vehicleId,
         premiumAmount,
@@ -27,6 +28,20 @@ router.post(
         underwriter,
         internalNotes,
       } = req.body;
+
+      const normalizedStartTime = normalizeTime(startTime);
+      const normalizedEndTime = normalizeTime(endTime);
+
+      if (normalizedStartTime === null || normalizedEndTime === null) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Validation Error: Enter a valid time (e.g. 09:30 or 5 PM).",
+        });
+      }
+
+      startTime = normalizedStartTime;
+      endTime = normalizedEndTime;
 
       const targetCustomer = await User.findById(customerId);
       if (!targetCustomer || targetCustomer.role !== "Customer") {
@@ -290,6 +305,21 @@ router.put(
         internalNotes,
       } = req.body;
 
+      const incomingStartTime =
+        startTime !== undefined ? normalizeTime(startTime) : undefined;
+      const incomingEndTime =
+        endTime !== undefined ? normalizeTime(endTime) : undefined;
+
+      if (
+        (startTime !== undefined && incomingStartTime === null) ||
+        (endTime !== undefined && incomingEndTime === null)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Validation Error: Enter a valid time (e.g. 09:30 or 5 PM).",
+        });
+      }
       const policy = await Policy.findById(id);
       if (!policy) {
         return res.status(404).json({
@@ -312,10 +342,10 @@ router.put(
         const cleanIncomingEndDate = endDate.split("T")[0];
 
         const incomingStartTimestamp = new Date(
-          `${cleanIncomingStartDate}T${startTime}:00.000Z`,
+          `${cleanIncomingStartDate}T${incomingStartTime}:00.000Z`,
         ).getTime();
         const incomingEndTimestamp = new Date(
-          `${cleanIncomingEndDate}T${endTime}:00.000Z`,
+          `${cleanIncomingEndDate}T${incomingEndTime}:00.000Z`,
         ).getTime();
 
         if (incomingStartTimestamp >= incomingEndTimestamp) {
@@ -366,8 +396,8 @@ router.put(
       if (premiumAmount !== undefined) policy.premiumAmount = premiumAmount;
       if (startDate !== undefined) policy.startDate = new Date(startDate);
       if (endDate !== undefined) policy.endDate = new Date(endDate);
-      if (startTime !== undefined) policy.startTime = startTime;
-      if (endTime !== undefined) policy.endTime = endTime;
+      if (startTime !== undefined) policy.startTime = incomingStartTime;
+      if (endTime !== undefined) policy.endTime = incomingEndTime;
       if (policyType !== undefined) policy.policyType = policyType;
       if (coverageType !== undefined) policy.coverageType = coverageType;
       if (underwriter !== undefined) policy.underwriter = underwriter;
