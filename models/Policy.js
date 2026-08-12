@@ -82,5 +82,7 @@ policySchema.pre("save", async function (next) {
 policySchema.index({ customerId: 1, status: 1 });
 policySchema.index({ vehicleId: 1 });
 policySchema.index({ createdBy: 1 });
+policySchema.index({ status: 1, startDate: 1, startTime: 1 });
+policySchema.index({ status: 1, endDate: 1, endTime: 1 });
 
 module.exports = mongoose.model("Policy", policySchema);
