@@ -7,6 +7,7 @@ const User = require("../models/User");
 const { sendPolicyEmail } = require("../utils/sendEmail");
 const {
   generatePolicyCertificatePdf,
+  buildDocumentData,
 } = require("../services/pdf/generatePolicyCertificate");
 const { normalizeTime } = require("../utils/normalizeTime");
 
@@ -339,6 +340,60 @@ router.get(
         success: false,
         message: "Server error while retrieving your policy records.",
         error: err.message,
+      });
+    }
+  },
+);
+
+router.get(
+  "/:id/document-data",
+  verifyJWT,
+  authorizeRoles("Customer", "Sub Admin", "Super Admin"),
+  async (req, res) => {
+    try {
+      const policy = await Policy.findById(req.params.id);
+
+      if (!policy) {
+        return res.status(404).json({ message: "Policy not found." });
+      }
+
+      if (
+        req.user.role === "Customer" &&
+        String(policy.customerId) !== String(req.user._id)
+      ) {
+        return res.status(403).json({
+          message: "Forbidden: You can only view documents for your policies.",
+        });
+      }
+
+      if (
+        req.user.role === "Sub Admin" &&
+        String(policy.createdBy) !== String(req.user._id)
+      ) {
+        return res.status(403).json({
+          message: "Forbidden: You can only view documents for policies you created.",
+        });
+      }
+
+      const [customer, vehicle] = await Promise.all([
+        User.findById(policy.customerId),
+        Vehicle.findById(policy.vehicleId),
+      ]);
+
+      if (!customer || !vehicle) {
+        return res.status(404).json({
+          message: "The customer or vehicle for this policy no longer exists.",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        document: buildDocumentData({ policy, customer, vehicle }),
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Failed to load the policy document.",
+        error: error.message,
       });
     }
   },
