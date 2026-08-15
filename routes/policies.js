@@ -13,6 +13,57 @@ const { normalizeTime } = require("../utils/normalizeTime");
 
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 
+const formatEmailPolicyDateTime = (dateValue, timeValue) => {
+  const date = new Date(dateValue);
+  const normalizedTime = String(timeValue || "00:00").padStart(5, "0");
+  const [hoursValue, minutesValue] = normalizedTime.split(":").map(Number);
+
+  if (
+    Number.isNaN(date.getTime()) ||
+    !Number.isInteger(hoursValue) ||
+    !Number.isInteger(minutesValue)
+  ) {
+    return "N/A";
+  }
+
+  const weekday = new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    timeZone: "UTC",
+  }).format(date);
+  const month = new Intl.DateTimeFormat("en-GB", {
+    month: "short",
+    timeZone: "UTC",
+  }).format(date);
+  const day = date.getUTCDate();
+  const hour12 = hoursValue % 12 || 12;
+  const minutes = minutesValue === 0
+    ? ""
+    : `:${String(minutesValue).padStart(2, "0")}`;
+  const period = hoursValue >= 12 ? "pm" : "am";
+
+  return `${weekday} ${day} ${month} at ${hour12}${minutes}${period}`;
+};
+
+const formatPolicyDuration = (startTimestamp, endTimestamp) => {
+  // Policy end times represent the final covered minute (for example,
+  // 10:59 means cover continues until 10:59:59).
+  const totalMinutes = Math.max(
+    1,
+    Math.round((endTimestamp - startTimestamp) / 60000) + 1,
+  );
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  return [
+    days ? `${days} day${days === 1 ? "" : "s"}` : "",
+    hours ? `${hours} hour${hours === 1 ? "" : "s"}` : "",
+    minutes ? `${minutes} minute${minutes === 1 ? "" : "s"}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+};
+
 router.post(
   "/",
   verifyJWT,
@@ -205,38 +256,32 @@ router.post(
           vehicle: targetVehicle,
         });
 
-        const durationMinutes = Math.round(
-          (incomingEndTimestamp - incomingStartTimestamp) / 60000,
+        const duration = formatPolicyDuration(
+          incomingStartTimestamp,
+          incomingEndTimestamp,
         );
-        const durationHours = Math.floor(durationMinutes / 60);
-        const remainingMinutes = durationMinutes % 60;
-        const duration = [
-          durationHours > 0
-            ? `${durationHours} hour${durationHours === 1 ? "" : "s"}`
-            : "",
-          remainingMinutes > 0
-            ? `${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"}`
-            : "",
-        ]
-          .filter(Boolean)
-          .join(" ");
+        const customerFullName =
+          [targetCustomer.firstName, targetCustomer.lastName]
+            .filter(Boolean)
+            .join(" ")
+            .trim() ||
+          targetCustomer.fullName?.trim() ||
+          "Valued Customer";
 
         const emailData = {
-          customerFullName: targetCustomer.fullName || "Valued Customer",
-          customerFirstName: (targetCustomer.fullName || "there").split(" ")[0],
+          customerFullName,
+          customerFirstName: customerFullName.split(/\s+/)[0] || "there",
           vehicleMake: targetVehicle.make,
           vehicleModel: targetVehicle.model,
           registration: targetVehicle.registration,
-          startDateStr: new Date(newPolicy.startDate).toLocaleString("en-GB", {
-            day: "numeric",
-            month: "short",
-            hour: "numeric",
-            minute: "2-digit",
-          }),
-          endDateStr: new Date(newPolicy.endDate).toLocaleString("en-GB", {
-            hour: "numeric",
-            minute: "2-digit",
-          }),
+          startDateStr: formatEmailPolicyDateTime(
+            newPolicy.startDate,
+            newPolicy.startTime,
+          ),
+          endDateStr: formatEmailPolicyDateTime(
+            newPolicy.endDate,
+            newPolicy.endTime,
+          ),
           duration,
           price: Number(newPolicy.premiumAmount).toFixed(2),
           cardBrand: "Card",

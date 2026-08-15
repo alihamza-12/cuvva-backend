@@ -1,14 +1,17 @@
+const crypto = require("crypto");
 
-function padLeft(num, width) {
-  const s = String(num);
-  if (s.length >= width) return s;
-  return `${"0".repeat(width - s.length)}${s}`;
-}
+const POLICY_PREFIX = "PP";
+const RANDOM_LENGTH = 15;
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
-function generatePolicyNumber(year, sequence) {
-  const y = year || new Date().getFullYear();
-  const seq = padLeft(sequence, 5);
-  return `POL-${y}-${seq}`;
+function generatePolicyNumber() {
+  let randomPart = "";
+
+  for (let index = 0; index < RANDOM_LENGTH; index += 1) {
+    randomPart += ALPHABET[crypto.randomInt(0, ALPHABET.length)];
+  }
+
+  return `${POLICY_PREFIX}${randomPart}`;
 }
 
 module.exports = { generatePolicyNumber };

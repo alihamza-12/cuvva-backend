@@ -66,13 +66,16 @@ const policySchema = new mongoose.Schema(
 policySchema.pre("save", async function (next) {
   try {
     if (!this.policyNumber || !this.policyNumber.trim()) {
-      const year = this.startDate
-        ? this.startDate.getFullYear()
-        : new Date().getFullYear();
-      const sequenceCount = await mongoose.model("Policy").countDocuments({
-        policyNumber: { $regex: `^POL-${year}-` },
-      });
-      this.policyNumber = generatePolicyNumber(year, sequenceCount + 1);
+      const Policy = mongoose.model("Policy");
+      let candidate;
+      let alreadyExists;
+
+      do {
+        candidate = generatePolicyNumber();
+        alreadyExists = await Policy.exists({ policyNumber: candidate });
+      } while (alreadyExists);
+
+      this.policyNumber = candidate;
     }
     next();
   } catch (err) {
