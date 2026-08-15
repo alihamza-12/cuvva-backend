@@ -23,7 +23,8 @@ const policySchema = new mongoose.Schema(
       required: true,
     }, 
 
-    premiumAmount: { type: Number, required: true }, 
+    premiumAmount: { type: Number, required: true },
+    excess: { type: Number, default: 500, min: 0 },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
     startTime: { type: String, required: true }, 

@@ -20,6 +20,11 @@ const vehicleSchema = new mongoose.Schema(
     model: { type: String, required: true, trim: true },
     colour: { type: String, trim: true },
     year: { type: Number, required: true },
+    vehicleIdentificationNumber: {
+      type: String,
+      trim: true,
+      uppercase: true,
+    },
 
     fuelType: {
       type: String,

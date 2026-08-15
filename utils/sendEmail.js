@@ -26,7 +26,11 @@ const LINKS = {
     "https://maps.google.com/?q=4th+Floor+Old+Sessions+House+23+Clerkenwell+Green+London+EC1R+0NA",
 };
 
-const sendPolicyEmail = async (userEmail, policyData) => {
+const sendPolicyEmail = async (
+  userEmail,
+  policyData,
+  dynamicPolicyCertificate,
+) => {
   try {
     const pdfDir = path.join(__dirname, "..", "pdfs");
     const imgDir = path.join(__dirname, "..", "public", "email-assets");
@@ -34,10 +38,8 @@ const sendPolicyEmail = async (userEmail, policyData) => {
     const attachments = [
 
       {
-        filename: "Policy details and certificate.pdf",
-        content: fs.readFileSync(
-          path.join(pdfDir, "Policy details and certificate.pdf"),
-        ),
+        filename: `${policyData.policyNumber}-Policy-details-and-certificate.pdf`,
+        content: dynamicPolicyCertificate,
         contentType: "application/pdf",
       },
       {

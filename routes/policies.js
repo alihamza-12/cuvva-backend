@@ -5,6 +5,9 @@ const Vehicle = require("../models/Vehicle");
 const User = require("../models/User");
 
 const { sendPolicyEmail } = require("../utils/sendEmail");
+const {
+  generatePolicyCertificatePdf,
+} = require("../services/pdf/generatePolicyCertificate");
 const { normalizeTime } = require("../utils/normalizeTime");
 
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
@@ -19,6 +22,7 @@ router.post(
         customerId,
         vehicleId,
         premiumAmount,
+        excess,
         startDate,
         endDate,
         startTime,
@@ -100,6 +104,26 @@ router.post(
         });
       }
 
+      const missingLegalFields = [];
+      if (!targetCustomer.fullName?.trim()) missingLegalFields.push("customer name");
+      if (!targetCustomer.dateOfBirth) missingLegalFields.push("customer birth date");
+      if (!targetCustomer.drivingLicenceNumber?.trim()) {
+        missingLegalFields.push("driving licence number");
+      }
+      if (!targetVehicle.registration?.trim()) {
+        missingLegalFields.push("vehicle registration");
+      }
+      if (!targetVehicle.vehicleIdentificationNumber?.trim()) {
+        missingLegalFields.push("vehicle VIN");
+      }
+
+      if (missingLegalFields.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot issue policy certificate. Complete the following required fields first: ${missingLegalFields.join(", ")}.`,
+        });
+      }
+
       const cleanIncomingStartDate = startDate.split("T")[0];
       const cleanIncomingEndDate = endDate.split("T")[0];
 
@@ -161,6 +185,7 @@ router.post(
         customerId,
         vehicleId,
         premiumAmount,
+        excess: excess === undefined ? 500 : excess,
         startDate: new Date(startDate),
         endDate: new Date(endDate),
         startTime,
@@ -173,6 +198,27 @@ router.post(
       });
 
       try {
+        const dynamicPolicyPdf = await generatePolicyCertificatePdf({
+          policy: newPolicy,
+          customer: targetCustomer,
+          vehicle: targetVehicle,
+        });
+
+        const durationMinutes = Math.round(
+          (incomingEndTimestamp - incomingStartTimestamp) / 60000,
+        );
+        const durationHours = Math.floor(durationMinutes / 60);
+        const remainingMinutes = durationMinutes % 60;
+        const duration = [
+          durationHours > 0
+            ? `${durationHours} hour${durationHours === 1 ? "" : "s"}`
+            : "",
+          remainingMinutes > 0
+            ? `${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
 
         const emailData = {
           customerFullName: targetCustomer.fullName || "Valued Customer",
@@ -180,7 +226,6 @@ router.post(
           vehicleMake: targetVehicle.make,
           vehicleModel: targetVehicle.model,
           registration: targetVehicle.registration,
-
           startDateStr: new Date(newPolicy.startDate).toLocaleString("en-GB", {
             day: "numeric",
             month: "short",
@@ -191,17 +236,26 @@ router.post(
             hour: "numeric",
             minute: "2-digit",
           }),
-          duration: "1 hour", 
-          price: Number(newPolicy.premiumAmount).toFixed(2), 
+          duration,
+          price: Number(newPolicy.premiumAmount).toFixed(2),
           cardBrand: "Card",
-          cardLast4: "0000", 
+          cardLast4: "0000",
           policyNumber: newPolicy.policyNumber || newPolicy._id.toString(),
+          underwriter: newPolicy.underwriter,
         };
 
-        sendPolicyEmail(targetCustomer.email, emailData);
-      } catch (emailError) {
-
-        console.error("Failed to send policy email:", emailError);
+        sendPolicyEmail(
+          targetCustomer.email,
+          emailData,
+          dynamicPolicyPdf,
+        ).catch((emailError) => {
+          console.error("Failed to send policy email:", emailError);
+        });
+      } catch (documentError) {
+        console.error(
+          "Failed to generate dynamic policy certificate:",
+          documentError,
+        );
       }
 
       return res.status(201).json({
@@ -291,6 +345,75 @@ router.get(
 );
 
 router.get(
+  "/:id/document",
+  verifyJWT,
+  authorizeRoles("Customer", "Sub Admin", "Super Admin"),
+  async (req, res) => {
+    try {
+      const policy = await Policy.findById(req.params.id);
+
+      if (!policy) {
+        return res.status(404).json({ message: "Policy not found." });
+      }
+
+      if (
+        req.user.role === "Customer" &&
+        String(policy.customerId) !== String(req.user._id)
+      ) {
+        return res.status(403).json({
+          message: "Forbidden: You can only view documents for your policies.",
+        });
+      }
+
+      if (
+        req.user.role === "Sub Admin" &&
+        String(policy.createdBy) !== String(req.user._id)
+      ) {
+        return res.status(403).json({
+          message: "Forbidden: You can only view documents for policies you created.",
+        });
+      }
+
+      const [customer, vehicle] = await Promise.all([
+        User.findById(policy.customerId),
+        Vehicle.findById(policy.vehicleId),
+      ]);
+
+      if (!customer || !vehicle) {
+        return res.status(404).json({
+          message: "The customer or vehicle for this policy no longer exists.",
+        });
+      }
+
+      const pdfBuffer = await generatePolicyCertificatePdf({
+        policy,
+        customer,
+        vehicle,
+      });
+      const safePolicyNumber = String(
+        policy.policyNumber || policy._id,
+      ).replace(/[^a-zA-Z0-9_-]/g, "-");
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${safePolicyNumber}-policy-details-and-certificate.pdf"`,
+      );
+      res.setHeader("Content-Length", pdfBuffer.length);
+      res.setHeader("Cache-Control", "private, no-store, max-age=0");
+      res.setHeader("Pragma", "no-cache");
+
+      return res.status(200).send(pdfBuffer);
+    } catch (error) {
+      return res.status(500).json({
+        message: "Failed to generate the policy document.",
+        error: error.message,
+      });
+    }
+  },
+);
+
+router.get(
   "/:id",
   verifyJWT,
   authorizeRoles("Super Admin"),
@@ -333,6 +456,7 @@ router.put(
       const { id } = req.params;
       const {
         premiumAmount,
+        excess,
         startDate,
         endDate,
         startTime,
@@ -433,6 +557,7 @@ router.put(
       }
 
       if (premiumAmount !== undefined) policy.premiumAmount = premiumAmount;
+      if (excess !== undefined) policy.excess = excess;
       if (startDate !== undefined) policy.startDate = new Date(startDate);
       if (endDate !== undefined) policy.endDate = new Date(endDate);
       if (startTime !== undefined) policy.startTime = incomingStartTime;

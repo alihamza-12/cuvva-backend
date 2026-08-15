@@ -143,4 +143,87 @@ router.get(
   },
 );
 
+router.patch(
+  "/:id",
+  verifyJWT,
+  authorizeRoles("Super Admin", "Sub Admin"),
+  async (req, res) => {
+    try {
+      const vehicle = await Vehicle.findById(req.params.id);
+
+      if (!vehicle) {
+        return res.status(404).json({ message: "Vehicle not found." });
+      }
+
+      if (
+        req.user.role === "Sub Admin" &&
+        String(vehicle.createdBy) !== String(req.user._id)
+      ) {
+        return res.status(403).json({
+          message: "Forbidden: You can only update vehicles you created.",
+        });
+      }
+
+      const allowedFields = [
+        "registration",
+        "make",
+        "model",
+        "colour",
+        "year",
+        "vehicleIdentificationNumber",
+        "fuelType",
+        "engineCapacityCC",
+        "powerBHP",
+        "topSpeed",
+        "cylinders",
+        "fuelConsumptionMPG",
+        "motStatus",
+        "motExpiryDate",
+        "taxStatus",
+        "taxDueDate",
+        "registrationKeeper",
+        "v5cIssueDate",
+        "co2Emissions",
+        "euroStatus",
+        "wheelplan",
+      ];
+
+      if (req.body.registration !== undefined) {
+        const cleanedRegistration = String(req.body.registration)
+          .toUpperCase()
+          .replace(/\s+/g, "");
+        const duplicate = await Vehicle.findOne({
+          _id: { $ne: vehicle._id },
+          registration: cleanedRegistration,
+        });
+
+        if (duplicate) {
+          return res.status(400).json({
+            message: "Another vehicle already uses this registration.",
+          });
+        }
+
+        req.body.registration = cleanedRegistration;
+      }
+
+      for (const field of allowedFields) {
+        if (req.body[field] !== undefined) vehicle[field] = req.body[field];
+      }
+
+      await vehicle.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "Vehicle updated successfully.",
+        vehicle,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Server error while updating vehicle.",
+        error: error.message,
+      });
+    }
+  },
+);
+
 module.exports = router;
