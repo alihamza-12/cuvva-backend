@@ -52,12 +52,51 @@ router.post(
         });
       }
 
+      if (req.user.role === "Sub Admin") {
+        const ownsCustomer =
+          targetCustomer.createdBy &&
+          targetCustomer.createdBy.toString() === req.user._id.toString();
+
+        if (!ownsCustomer) {
+          return res.status(403).json({
+            success: false,
+            message:
+              "Forbidden: You can only create policies for customers you created.",
+          });
+        }
+
+        const isCustomerRestricted = (
+          req.user.policyRestrictedCustomerIds || []
+        ).some(
+          (restrictedId) => restrictedId.toString() === String(customerId),
+        );
+
+        if (isCustomerRestricted) {
+          return res.status(403).json({
+            success: false,
+            message:
+              "Policy creation has been restricted for this customer by a Super Admin.",
+          });
+        }
+      }
+
       const targetVehicle = await Vehicle.findById(vehicleId);
       if (!targetVehicle) {
         return res.status(404).json({
           success: false,
           message:
             "Target vehicle not found in the system catalog. Register the car first.",
+        });
+      }
+
+      if (
+        req.user.role === "Sub Admin" &&
+        targetVehicle.createdBy.toString() !== req.user._id.toString()
+      ) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Forbidden: You can only create policies using vehicles you created.",
         });
       }
 

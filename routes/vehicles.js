@@ -68,13 +68,17 @@ router.get("/lookup/:registration", async (req, res) => {
       .toUpperCase()
       .replace(/\s+/g, "");
 
-    let vehicleQuery = Vehicle.findOne({ registration: cleanedRegistration });
+    const lookupFilter = { registration: cleanedRegistration };
 
-    if (req.user && req.user.role === "Super Admin") {
+    if (req.user?.role === "Sub Admin") {
+      lookupFilter.createdBy = req.user._id;
+    }
 
+    let vehicleQuery = Vehicle.findOne(lookupFilter);
+
+    if (req.user?.role === "Super Admin") {
       vehicleQuery = vehicleQuery.populate("createdBy", "fullName role");
     } else {
-
       vehicleQuery = vehicleQuery.select("-createdBy");
     }
 
@@ -108,16 +112,17 @@ router.get(
   async (req, res) => {
     try {
 
-      let vehicleQuery = Vehicle.find().sort({ createdAt: -1 });
+      const vehicleFilter =
+        req.user?.role === "Sub Admin" ? { createdBy: req.user._id } : {};
 
-      if (req.user && req.user.role === "Super Admin") {
+      let vehicleQuery = Vehicle.find(vehicleFilter).sort({ createdAt: -1 });
 
+      if (req.user?.role === "Super Admin") {
         vehicleQuery = vehicleQuery.populate(
           "createdBy",
           "fullName role email",
         );
       } else {
-
         vehicleQuery = vehicleQuery.select("-createdBy");
       }
 

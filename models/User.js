@@ -50,7 +50,16 @@ const userSchema = new mongoose.Schema(
       default: "Active",
     },
     expiresAt: { type: Date, default: null }, 
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, 
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+
+    // Used only for Sub Admin accounts. Customers in this list remain visible
+    // to the Sub Admin, but cannot be selected for new policy creation.
+    policyRestrictedCustomerIds: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
 
     refreshTokens: [String],
     resetToken: String,

@@ -1,4 +1,5 @@
 const express = require("express");
+const mongoose = require("mongoose");
 const User = require("../models/User");
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 
@@ -201,6 +202,174 @@ router.patch(
           status: targetUser.status,
           expiresAt: targetUser.expiresAt,
         },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.get(
+  "/subadmins/:id/policy-permissions",
+  verifyJWT,
+  authorizeRoles("Super Admin"),
+  async (req, res, next) => {
+    try {
+      const subAdmin = await User.findOne({
+        _id: req.params.id,
+        role: "Sub Admin",
+      }).select("fullName email role status policyRestrictedCustomerIds");
+
+      if (!subAdmin) {
+        return res.status(404).json({ message: "Sub Admin not found." });
+      }
+
+      const restrictedIds = new Set(
+        (subAdmin.policyRestrictedCustomerIds || []).map((customerId) =>
+          customerId.toString(),
+        ),
+      );
+
+      const customerDocuments = await User.find({
+        role: "Customer",
+        createdBy: subAdmin._id,
+      })
+        .select("fullName email status createdAt")
+        .sort({ createdAt: -1 });
+
+      const customers = customerDocuments.map((customerDocument) => ({
+        ...customerDocument.toObject(),
+        policyCreationRestricted: restrictedIds.has(
+          customerDocument._id.toString(),
+        ),
+      }));
+
+      return res.status(200).json({
+        success: true,
+        subAdmin: {
+          _id: subAdmin._id,
+          fullName: subAdmin.fullName,
+          email: subAdmin.email,
+          status: subAdmin.status,
+        },
+        count: customers.length,
+        restrictedCount: customers.filter(
+          (customer) => customer.policyCreationRestricted,
+        ).length,
+        customers,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.patch(
+  "/subadmins/:id/policy-permissions",
+  verifyJWT,
+  authorizeRoles("Super Admin"),
+  async (req, res, next) => {
+    try {
+      const { customerIds, restricted } = req.body || {};
+
+      if (!Array.isArray(customerIds) || customerIds.length === 0) {
+        return res.status(400).json({
+          message: "Select at least one customer.",
+        });
+      }
+
+      if (typeof restricted !== "boolean") {
+        return res.status(400).json({
+          message: "The restricted value must be true or false.",
+        });
+      }
+
+      const uniqueCustomerIds = [...new Set(customerIds.map(String))];
+
+      if (
+        !mongoose.isValidObjectId(req.params.id) ||
+        uniqueCustomerIds.some(
+          (customerId) => !mongoose.isValidObjectId(customerId),
+        )
+      ) {
+        return res.status(400).json({ message: "Invalid account identifier." });
+      }
+
+      const subAdmin = await User.findOne({
+        _id: req.params.id,
+        role: "Sub Admin",
+      });
+
+      if (!subAdmin) {
+        return res.status(404).json({ message: "Sub Admin not found." });
+      }
+
+      const ownedCustomers = await User.find({
+        _id: { $in: uniqueCustomerIds },
+        role: "Customer",
+        createdBy: subAdmin._id,
+      }).select("_id");
+
+      if (ownedCustomers.length !== uniqueCustomerIds.length) {
+        return res.status(403).json({
+          message:
+            "One or more selected customers do not belong to this Sub Admin.",
+        });
+      }
+
+      if (restricted) {
+        await User.updateOne(
+          { _id: subAdmin._id },
+          {
+            $addToSet: {
+              policyRestrictedCustomerIds: { $each: uniqueCustomerIds },
+            },
+          },
+        );
+      } else {
+        await User.updateOne(
+          { _id: subAdmin._id },
+          {
+            $pull: {
+              policyRestrictedCustomerIds: { $in: uniqueCustomerIds },
+            },
+          },
+        );
+      }
+
+      const updatedSubAdmin = await User.findById(subAdmin._id).select(
+        "policyRestrictedCustomerIds",
+      );
+      const restrictedIds = new Set(
+        (updatedSubAdmin.policyRestrictedCustomerIds || []).map((customerId) =>
+          customerId.toString(),
+        ),
+      );
+
+      const customerDocuments = await User.find({
+        role: "Customer",
+        createdBy: subAdmin._id,
+      })
+        .select("fullName email status createdAt")
+        .sort({ createdAt: -1 });
+
+      const customers = customerDocuments.map((customerDocument) => ({
+        ...customerDocument.toObject(),
+        policyCreationRestricted: restrictedIds.has(
+          customerDocument._id.toString(),
+        ),
+      }));
+
+      return res.status(200).json({
+        success: true,
+        message: restricted
+          ? `${uniqueCustomerIds.length} customer(s) restricted from policy creation.`
+          : `${uniqueCustomerIds.length} customer(s) allowed for policy creation.`,
+        count: customers.length,
+        restrictedCount: customers.filter(
+          (customer) => customer.policyCreationRestricted,
+        ).length,
+        customers,
       });
     } catch (error) {
       next(error);

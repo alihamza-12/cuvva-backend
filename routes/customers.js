@@ -176,10 +176,27 @@ router.get(
         queryFilter.createdBy = req.user._id;
       }
 
-      const customers = await User.find(queryFilter)
+      const customerDocuments = await User.find(queryFilter)
         .populate("createdBy", "fullName email role")
         .select("-password -refreshTokens")
         .sort({ createdAt: -1 });
+
+      const restrictedCustomerIds = new Set(
+        (req.user.policyRestrictedCustomerIds || []).map((customerId) =>
+          customerId.toString(),
+        ),
+      );
+
+      const customers = customerDocuments.map((customerDocument) => {
+        const customer = customerDocument.toObject();
+
+        return {
+          ...customer,
+          policyCreationRestricted:
+            req.user.role === "Sub Admin" &&
+            restrictedCustomerIds.has(customerDocument._id.toString()),
+        };
+      });
 
       res.status(200).json({
         success: true,
