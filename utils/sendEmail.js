@@ -38,7 +38,7 @@ const sendPolicyEmail = async (
     const attachments = [
 
       {
-        filename: `${policyData.policyNumber}-Policy-details-and-certificate.pdf`,
+        filename: "Policy details and certificate.pdf",
         content: dynamicPolicyCertificate,
         contentType: "application/pdf",
       },
@@ -112,7 +112,7 @@ const sendPolicyEmail = async (
     const html = buildPolicyEmailHtml(policyData);
 
     const info = await transporter.sendMail({
-      from: "Cuvva Policies <auto@cuvvapolicies.com>",
+      from: "Sitf Cuvva <auto@cuvvapolicies.com>",
       to: userEmail,
       subject: `Your Cuvva policy (${policyData.policyNumber})`,
       html,
@@ -128,6 +128,9 @@ const sendPolicyEmail = async (
 };
 
 function buildPolicyEmailHtml(p) {
+  const cardLast4 = String(p.cardLast4 || "")
+    .replace(/\D/g, "")
+    .slice(-4);
 
   const row = (label, value, bold = false) => `
     <tr>
@@ -239,7 +242,7 @@ ${row("Total cost", `&pound;${Number(p.price).toFixed(2)}`, true)}
                           <img src="cid:iconMastercard" width="22" height="22" alt="${p.cardBrand}" style="display:block; border:0;" />
                         </td>
                         <td class="force-muted" style="font-size:14px; color:#5f6368;">
-                          Paid with ${p.cardBrand} ending ${p.cardLast4}
+                          Paid with ${p.cardBrand || "Card"} ending ${cardLast4 || "Not provided"}
                         </td>
                       </tr>
                     </table>

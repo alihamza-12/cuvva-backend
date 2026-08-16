@@ -75,6 +75,7 @@ router.post(
         vehicleId,
         premiumAmount,
         excess,
+        cardLast4,
         startDate,
         endDate,
         startTime,
@@ -98,6 +99,14 @@ router.post(
 
       startTime = normalizedStartTime;
       endTime = normalizedEndTime;
+      cardLast4 = String(cardLast4 || "").trim();
+
+      if (!/^\d{4}$/.test(cardLast4)) {
+        return res.status(400).json({
+          success: false,
+          message: "Enter exactly the last 4 digits of the payment card.",
+        });
+      }
 
       const targetCustomer = await User.findById(customerId);
       if (!targetCustomer || targetCustomer.role !== "Customer") {
@@ -238,6 +247,7 @@ router.post(
         vehicleId,
         premiumAmount,
         excess: excess === undefined ? 500 : excess,
+        cardLast4,
         startDate: new Date(startDate),
         endDate: new Date(endDate),
         startTime,
@@ -285,7 +295,7 @@ router.post(
           duration,
           price: Number(newPolicy.premiumAmount).toFixed(2),
           cardBrand: "Card",
-          cardLast4: "0000",
+          cardLast4: newPolicy.cardLast4,
           policyNumber: newPolicy.policyNumber || newPolicy._id.toString(),
           underwriter: newPolicy.underwriter,
         };

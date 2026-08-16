@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 
-const POLICY_PREFIX = "PP";
-const RANDOM_LENGTH = 15;
+const POLICY_PREFIX = "PPWAKF";
+const RANDOM_LENGTH = 11;
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 function generatePolicyNumber() {

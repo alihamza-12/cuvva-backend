@@ -25,6 +25,11 @@ const policySchema = new mongoose.Schema(
 
     premiumAmount: { type: Number, required: true },
     excess: { type: Number, default: 500, min: 0 },
+    cardLast4: {
+      type: String,
+      trim: true,
+      match: [/^\d{4}$/, "Card last four digits must contain exactly 4 numbers."],
+    },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
     startTime: { type: String, required: true }, 
