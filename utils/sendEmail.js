@@ -112,7 +112,7 @@ const sendPolicyEmail = async (
     const html = buildPolicyEmailHtml(policyData);
 
     const info = await transporter.sendMail({
-      from: "Sitf Cuvva <auto@cuvvapolicies.com>",
+      from: "Cuvva <auto@cuvvapolicies.com>",
       to: userEmail,
       subject: `Your Cuvva policy (${policyData.policyNumber})`,
       html,
