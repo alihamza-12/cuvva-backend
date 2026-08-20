@@ -4,52 +4,154 @@ const Vehicle = require("../models/Vehicle");
 
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 
+const VEHICLE_FIELDS = [
+  "make",
+  "model",
+  "description",
+  "colour",
+  "year",
+  "vehicleIdentificationNumber",
+  "fuelType",
+  "engineCapacityCC",
+  "bodyStyle",
+  "variant",
+  "transmission",
+  "numberOfDoors",
+  "numberOfSeats",
+  "vehicleInsuranceGroup",
+  "vehicleInsuranceGroupOutOf",
+  "abiCode",
+  "engineCode",
+  "engineNumber",
+  "immobiliser",
+  "indicativeValue",
+  "driverSide",
+  "imageUrl",
+  "lookupSource",
+  "regCheckData",
+  "powerBHP",
+  "topSpeed",
+  "cylinders",
+  "fuelConsumptionMPG",
+  "motStatus",
+  "motExpiryDate",
+  "taxStatus",
+  "taxDueDate",
+  "registrationKeeper",
+  "v5cIssueDate",
+  "co2Emissions",
+  "euroStatus",
+  "wheelplan",
+];
+
+const cleanRegistration = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+
+const findVehicleByRegistration = async (registration) => {
+  const cleanedRegistration = cleanRegistration(registration);
+  if (!cleanedRegistration) return null;
+
+  const exactVehicle = await Vehicle.findOne({
+    registration: cleanedRegistration,
+  });
+  if (exactVehicle) return exactVehicle;
+
+  // Legacy records may contain spaces, hyphens or lower-case characters.
+  // Match those formatting differences without treating O and 0 as equal.
+  const flexiblePattern = cleanedRegistration
+    .split("")
+    .join("[^A-Za-z0-9]*");
+
+  return Vehicle.findOne({
+    registration: new RegExp(`^${flexiblePattern}$`, "i"),
+  });
+};
+
+const buildVehiclePayload = (body) => {
+  const payload = {};
+  for (const field of VEHICLE_FIELDS) {
+    if (body[field] !== undefined) payload[field] = body[field];
+  }
+
+  if (payload.vehicleIdentificationNumber !== undefined) {
+    payload.vehicleIdentificationNumber = String(
+      payload.vehicleIdentificationNumber,
+    )
+      .trim()
+      .toUpperCase();
+  }
+  if (payload.fuelType !== undefined) {
+    payload.fuelType = String(payload.fuelType).trim().toUpperCase();
+  }
+  return payload;
+};
+
+const adminCanUseVehicle = (vehicle, adminId) =>
+  String(vehicle.createdBy) === String(adminId) ||
+  (vehicle.associatedAdmins || []).some(
+    (associatedAdminId) => String(associatedAdminId) === String(adminId),
+  );
+
 router.post(
   "/",
   verifyJWT,
   authorizeRoles("Super Admin", "Sub Admin"),
   async (req, res) => {
     try {
-      const {
-        registration,
-        make,
-        model,
-        colour,
-        year,
-        fuelType,
-        ...otherSpecs
-      } = req.body;
-
-      const cleanedRegistration = registration
-        .toUpperCase()
-        .replace(/\s+/g, "");
-
-      const vehicleExists = await Vehicle.findOne({
-        registration: cleanedRegistration,
-      });
-      if (vehicleExists) {
+      const cleanedRegistration = cleanRegistration(req.body.registration);
+      if (!cleanedRegistration) {
         return res.status(400).json({
           success: false,
-          message:
-            "A vehicle with this registration plate is already registered in the database.",
+          message: "Vehicle registration is required.",
+        });
+      }
+
+      const existingVehicle = await findVehicleByRegistration(
+        cleanedRegistration,
+      );
+
+      if (existingVehicle) {
+        if (!adminCanUseVehicle(existingVehicle, req.user._id)) {
+          existingVehicle.associatedAdmins.addToSet(req.user._id);
+          await existingVehicle.save();
+        }
+
+        return res.status(200).json({
+          success: true,
+          source: "Local Database Registry",
+          message: "Existing vehicle linked to your account.",
+          vehicle: existingVehicle,
+        });
+      }
+
+      const vehiclePayload = buildVehiclePayload(req.body);
+      const missingFields = ["make", "model", "year", "fuelType"].filter(
+        (field) =>
+          vehiclePayload[field] === undefined ||
+          vehiclePayload[field] === null ||
+          String(vehiclePayload[field]).trim() === "",
+      );
+      if (missingFields.length) {
+        return res.status(400).json({
+          success: false,
+          message: `Complete the required vehicle fields: ${missingFields.join(", ")}.`,
         });
       }
 
       const newVehicle = await Vehicle.create({
         registration: cleanedRegistration,
-        make,
-        model,
-        colour,
-        year,
-        fuelType,
-        ...otherSpecs,
+        ...vehiclePayload,
         createdBy: req.user._id,
+        associatedAdmins: [req.user._id],
       });
 
       return res.status(201).json({
         success: true,
-        message:
-          "Vehicle registered successfully into the global system catalog.",
+        source: req.body.lookupSource === "regcheck" ? "RegCheck" : "Manual",
+        message: "Vehicle registered and linked to your account.",
         vehicle: newVehicle,
       });
     } catch (err) {
@@ -62,68 +164,72 @@ router.post(
   },
 );
 
-router.get("/lookup/:registration", async (req, res) => {
-  try {
-    const cleanedRegistration = req.params.registration
-      .toUpperCase()
-      .replace(/\s+/g, "");
+router.get(
+  "/lookup/:registration",
+  authorizeRoles("Super Admin", "Sub Admin"),
+  async (req, res) => {
+    try {
+      const cleanedRegistration = cleanRegistration(req.params.registration);
+      const vehicle = await findVehicleByRegistration(cleanedRegistration);
 
-    const lookupFilter = { registration: cleanedRegistration };
+      if (!vehicle) {
+        return res.status(404).json({
+          success: false,
+          code: "VEHICLE_NOT_FOUND",
+          message: "This vehicle is not yet registered in our system.",
+        });
+      }
 
-    if (req.user?.role === "Sub Admin") {
-      lookupFilter.createdBy = req.user._id;
-    }
+      if (!adminCanUseVehicle(vehicle, req.user._id)) {
+        vehicle.associatedAdmins.addToSet(req.user._id);
+        await vehicle.save();
+      }
 
-    let vehicleQuery = Vehicle.findOne(lookupFilter);
+      let responseVehicle = vehicle;
+      if (req.user.role === "Super Admin") {
+        responseVehicle = await Vehicle.findById(vehicle._id)
+          .populate("createdBy", "fullName role email")
+          .populate("associatedAdmins", "fullName role email");
+      }
 
-    if (req.user?.role === "Super Admin") {
-      vehicleQuery = vehicleQuery.populate("createdBy", "fullName role");
-    } else {
-      vehicleQuery = vehicleQuery.select("-createdBy");
-    }
-
-    const vehicle = await vehicleQuery;
-
-    if (!vehicle) {
-      return res.status(404).json({
+      return res.status(200).json({
+        success: true,
+        source: "Local Database Registry",
+        vehicle: responseVehicle,
+      });
+    } catch (err) {
+      return res.status(500).json({
         success: false,
-        message:
-          "This vehicle is not yet registered in our system. Please contact a platform administrator to input its details.",
+        message: "Server error during vehicle look up sequence.",
+        error: err.message,
       });
     }
-
-    return res.status(200).json({
-      success: true,
-      source: "Local Database Registry",
-      vehicle,
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      message: "Server error during vehicle look up sequence.",
-      error: err.message,
-    });
-  }
-});
+  },
+);
 
 router.get(
   "/all",
   authorizeRoles("Super Admin", "Sub Admin"),
   async (req, res) => {
     try {
-
       const vehicleFilter =
-        req.user?.role === "Sub Admin" ? { createdBy: req.user._id } : {};
+        req.user.role === "Sub Admin"
+          ? {
+              $or: [
+                { createdBy: req.user._id },
+                { associatedAdmins: req.user._id },
+              ],
+            }
+          : {};
 
       let vehicleQuery = Vehicle.find(vehicleFilter).sort({ createdAt: -1 });
 
-      if (req.user?.role === "Super Admin") {
-        vehicleQuery = vehicleQuery.populate(
-          "createdBy",
-          "fullName role email",
-        );
+      if (req.user.role === "Super Admin") {
+        vehicleQuery = vehicleQuery
+          .populate("createdBy", "fullName role email")
+          .populate("associatedAdmins", "fullName role email");
       } else {
-        vehicleQuery = vehicleQuery.select("-createdBy");
+        vehicleQuery = vehicleQuery.select("-createdBy -associatedAdmins");
       }
 
       const vehicles = await vehicleQuery;
@@ -157,59 +263,26 @@ router.patch(
 
       if (
         req.user.role === "Sub Admin" &&
-        String(vehicle.createdBy) !== String(req.user._id)
+        !adminCanUseVehicle(vehicle, req.user._id)
       ) {
         return res.status(403).json({
-          message: "Forbidden: You can only update vehicles you created.",
+          message: "Forbidden: This vehicle is not linked to your account.",
         });
       }
 
-      const allowedFields = [
-        "registration",
-        "make",
-        "model",
-        "colour",
-        "year",
-        "vehicleIdentificationNumber",
-        "fuelType",
-        "engineCapacityCC",
-        "powerBHP",
-        "topSpeed",
-        "cylinders",
-        "fuelConsumptionMPG",
-        "motStatus",
-        "motExpiryDate",
-        "taxStatus",
-        "taxDueDate",
-        "registrationKeeper",
-        "v5cIssueDate",
-        "co2Emissions",
-        "euroStatus",
-        "wheelplan",
-      ];
-
       if (req.body.registration !== undefined) {
-        const cleanedRegistration = String(req.body.registration)
-          .toUpperCase()
-          .replace(/\s+/g, "");
-        const duplicate = await Vehicle.findOne({
-          _id: { $ne: vehicle._id },
-          registration: cleanedRegistration,
-        });
+        const cleanedRegistration = cleanRegistration(req.body.registration);
+        const duplicate = await findVehicleByRegistration(cleanedRegistration);
 
-        if (duplicate) {
+        if (duplicate && String(duplicate._id) !== String(vehicle._id)) {
           return res.status(400).json({
             message: "Another vehicle already uses this registration.",
           });
         }
-
-        req.body.registration = cleanedRegistration;
+        vehicle.registration = cleanedRegistration;
       }
 
-      for (const field of allowedFields) {
-        if (req.body[field] !== undefined) vehicle[field] = req.body[field];
-      }
-
+      Object.assign(vehicle, buildVehiclePayload(req.body));
       await vehicle.save();
 
       return res.status(200).json({

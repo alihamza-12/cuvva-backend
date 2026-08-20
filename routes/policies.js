@@ -154,14 +154,16 @@ router.post(
         });
       }
 
-      if (
-        req.user.role === "Sub Admin" &&
-        targetVehicle.createdBy.toString() !== req.user._id.toString()
-      ) {
+      const subAdminCanUseVehicle =
+        String(targetVehicle.createdBy) === String(req.user._id) ||
+        (targetVehicle.associatedAdmins || []).some(
+          (adminId) => String(adminId) === String(req.user._id),
+        );
+
+      if (req.user.role === "Sub Admin" && !subAdminCanUseVehicle) {
         return res.status(403).json({
           success: false,
-          message:
-            "Forbidden: You can only create policies using vehicles you created.",
+          message: "Forbidden: This vehicle is not linked to your account.",
         });
       }
 
