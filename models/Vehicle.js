@@ -53,7 +53,12 @@ const vehicleSchema = new mongoose.Schema(
     indicativeValue: { type: Number },
     driverSide: { type: String, trim: true },
     imageUrl: { type: String, trim: true },
-    lookupSource: { type: String, trim: true },
+    lookupSource: {
+      type: String,
+      enum: ["manual", "regcheck"],
+      default: "manual",
+      trim: true,
+    },
     regCheckData: { type: mongoose.Schema.Types.Mixed },
     powerBHP: { type: Number },
     topSpeed: { type: Number },
