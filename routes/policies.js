@@ -154,11 +154,15 @@ router.post(
         });
       }
 
+      const vehicleRemovedForSubAdmin = (
+        targetVehicle.removedForAdmins || []
+      ).some((adminId) => String(adminId) === String(req.user._id));
       const subAdminCanUseVehicle =
-        String(targetVehicle.createdBy) === String(req.user._id) ||
-        (targetVehicle.associatedAdmins || []).some(
-          (adminId) => String(adminId) === String(req.user._id),
-        );
+        !vehicleRemovedForSubAdmin &&
+        (String(targetVehicle.createdBy) === String(req.user._id) ||
+          (targetVehicle.associatedAdmins || []).some(
+            (adminId) => String(adminId) === String(req.user._id),
+          ));
 
       if (req.user.role === "Sub Admin" && !subAdminCanUseVehicle) {
         return res.status(403).json({

@@ -60,12 +60,9 @@ const findVehicleByRegistration = async (registration) => {
   });
   if (exactVehicle) return exactVehicle;
 
-  // Legacy records may contain spaces, hyphens or lower-case characters.
-  // Match those formatting differences without treating O and 0 as equal.
   const flexiblePattern = cleanedRegistration
     .split("")
     .join("[^A-Za-z0-9]*");
-
   return Vehicle.findOne({
     registration: new RegExp(`^${flexiblePattern}$`, "i"),
   });
@@ -91,12 +88,8 @@ const buildVehiclePayload = (body) => {
 };
 
 const objectIdOf = (value) => value?._id || value;
-
-const adminCanUseVehicle = (vehicle, adminId) =>
-  String(objectIdOf(vehicle.createdBy)) === String(adminId) ||
-  (vehicle.associatedAdmins || []).some(
-    (associatedAdmin) => String(objectIdOf(associatedAdmin)) === String(adminId),
-  );
+const idEquals = (left, right) =>
+  String(objectIdOf(left)) === String(objectIdOf(right));
 
 const hasProviderData = (vehicle) => {
   const data = vehicle?.regCheckData;
@@ -113,32 +106,72 @@ const getSourceType = (vehicle) =>
     ? "automatic"
     : "manual";
 
-const getDeletePermission = ({ vehicle, user, referencedByPolicy = false }) => {
-  const isCreator =
-    String(objectIdOf(vehicle.createdBy)) === String(user._id);
-  const sourceType = getSourceType(vehicle);
+const isRemovedForAdmin = (vehicle, adminId) =>
+  (vehicle.removedForAdmins || []).some((id) => idEquals(id, adminId));
 
-  if (sourceType === "automatic") {
+const adminIsLinked = (vehicle, adminId) => {
+  if (isRemovedForAdmin(vehicle, adminId)) return false;
+  return (
+    idEquals(vehicle.createdBy, adminId) ||
+    (vehicle.associatedAdmins || []).some((admin) =>
+      idEquals(admin, adminId),
+    )
+  );
+};
+
+const getActiveAdminIds = (vehicle) => {
+  const removedIds = new Set(
+    (vehicle.removedForAdmins || []).map((id) => String(objectIdOf(id))),
+  );
+  const activeIds = new Set();
+
+  for (const admin of vehicle.associatedAdmins || []) {
+    const id = String(objectIdOf(admin));
+    if (id && !removedIds.has(id)) activeIds.add(id);
+  }
+
+  const creatorId = String(objectIdOf(vehicle.createdBy) || "");
+  if (creatorId && !removedIds.has(creatorId)) activeIds.add(creatorId);
+  return activeIds;
+};
+
+const getRemovalPermission = ({ vehicle, user, referencedByPolicy = false }) => {
+  const linked = adminIsLinked(vehicle, user._id);
+  if (!linked) {
     return {
       canDelete: false,
-      deleteDisabledReason: "Automatically verified vehicles cannot be deleted.",
+      deletionMode: null,
+      deleteDisabledReason: "This vehicle is not linked to your account.",
     };
   }
-  if (!isCreator) {
+
+  const activeAdminCount = getActiveAdminIds(vehicle).size;
+  const canPermanentlyDelete =
+    getSourceType(vehicle) === "manual" &&
+    activeAdminCount === 1 &&
+    !referencedByPolicy;
+
+  if (canPermanentlyDelete) {
     return {
-      canDelete: false,
-      deleteDisabledReason:
-        "Only the admin who originally added this vehicle can delete it.",
+      canDelete: true,
+      deletionMode: "permanent",
+      deleteDisabledReason: null,
     };
   }
-  if (referencedByPolicy) {
-    return {
-      canDelete: false,
-      deleteDisabledReason:
-        "This vehicle cannot be deleted because it is referenced by one or more policies.",
-    };
+
+  let retainedReason = "The vehicle will remain available to other associated admins.";
+  if (getSourceType(vehicle) === "automatic") {
+    retainedReason = "Automatically verified vehicles are retained in the database.";
+  } else if (referencedByPolicy) {
+    retainedReason = "The vehicle is retained because one or more policies reference it.";
   }
-  return { canDelete: true, deleteDisabledReason: null };
+
+  return {
+    canDelete: true,
+    deletionMode: "unlink",
+    deleteDisabledReason: null,
+    retainedReason,
+  };
 };
 
 const presentVehicle = (
@@ -147,29 +180,31 @@ const presentVehicle = (
   { includeAssociatedSubAdmins = false, referencedByPolicy = false } = {},
 ) => {
   const plain = vehicle.toObject ? vehicle.toObject() : { ...vehicle };
-  const isCreator =
-    String(objectIdOf(plain.createdBy)) === String(user._id);
+  const isCreator = idEquals(plain.createdBy, user._id);
   const associatedSubAdmins = [];
   const seen = new Set();
+  const removedIds = new Set(
+    (plain.removedForAdmins || []).map((id) => String(objectIdOf(id))),
+  );
 
   if (includeAssociatedSubAdmins) {
     for (const admin of plain.associatedAdmins || []) {
       if (!admin || admin.role !== "Sub Admin") continue;
       const id = String(objectIdOf(admin));
-      if (seen.has(id)) continue;
+      if (!id || seen.has(id) || removedIds.has(id)) continue;
       seen.add(id);
       associatedSubAdmins.push({
         _id: objectIdOf(admin),
         fullName: admin.fullName,
         email: admin.email,
         role: admin.role,
-        isCreator: String(objectIdOf(plain.createdBy)) === id,
+        isCreator: idEquals(plain.createdBy, admin),
       });
     }
 
     if (plain.createdBy?.role === "Sub Admin") {
       const creatorId = String(objectIdOf(plain.createdBy));
-      if (!seen.has(creatorId)) {
+      if (!seen.has(creatorId) && !removedIds.has(creatorId)) {
         associatedSubAdmins.unshift({
           _id: objectIdOf(plain.createdBy),
           fullName: plain.createdBy.fullName,
@@ -185,7 +220,9 @@ const presentVehicle = (
     ...plain,
     sourceType: getSourceType(plain),
     isCreator,
-    permissions: getDeletePermission({
+    isLinkedToCurrentAdmin: adminIsLinked(plain, user._id),
+    activeAdminCount: getActiveAdminIds(plain).size,
+    permissions: getRemovalPermission({
       vehicle: plain,
       user,
       referencedByPolicy,
@@ -197,6 +234,7 @@ const presentVehicle = (
     result.associatedSubAdminCount = associatedSubAdmins.length;
   } else {
     delete result.associatedAdmins;
+    delete result.removedForAdmins;
   }
 
   return result;
@@ -206,6 +244,12 @@ const getPopulatedVehicle = (id) =>
   Vehicle.findById(id)
     .populate("createdBy", "fullName role email")
     .populate("associatedAdmins", "fullName role email");
+
+const restoreAdminLink = async (vehicle, adminId) => {
+  vehicle.associatedAdmins.addToSet(adminId);
+  vehicle.removedForAdmins.pull(adminId);
+  await vehicle.save();
+};
 
 router.post(
   "/",
@@ -224,13 +268,10 @@ router.post(
       const existingVehicle = await findVehicleByRegistration(
         cleanedRegistration,
       );
-
       if (existingVehicle) {
-        if (!adminCanUseVehicle(existingVehicle, req.user._id)) {
-          existingVehicle.associatedAdmins.addToSet(req.user._id);
-          await existingVehicle.save();
+        if (!adminIsLinked(existingVehicle, req.user._id)) {
+          await restoreAdminLink(existingVehicle, req.user._id);
         }
-
         const populatedVehicle = await getPopulatedVehicle(existingVehicle._id);
         return res.status(200).json({
           success: true,
@@ -305,9 +346,9 @@ router.get(
         });
       }
 
-      if (!adminCanUseVehicle(vehicle, req.user._id)) {
-        vehicle.associatedAdmins.addToSet(req.user._id);
-        await vehicle.save();
+      const shouldAssociate = req.query.associate !== "false";
+      if (shouldAssociate && !adminIsLinked(vehicle, req.user._id)) {
+        await restoreAdminLink(vehicle, req.user._id);
       }
 
       const [responseVehicle, referencedByPolicy] = await Promise.all([
@@ -341,9 +382,14 @@ router.get(
       const vehicleFilter =
         req.user.role === "Sub Admin"
           ? {
-              $or: [
-                { createdBy: req.user._id },
-                { associatedAdmins: req.user._id },
+              $and: [
+                {
+                  $or: [
+                    { createdBy: req.user._id },
+                    { associatedAdmins: req.user._id },
+                  ],
+                },
+                { removedForAdmins: { $ne: req.user._id } },
               ],
             }
           : {};
@@ -380,14 +426,13 @@ router.patch(
   async (req, res) => {
     try {
       const vehicle = await Vehicle.findById(req.params.id);
-
       if (!vehicle) {
         return res.status(404).json({ message: "Vehicle not found." });
       }
 
       if (
         req.user.role === "Sub Admin" &&
-        !adminCanUseVehicle(vehicle, req.user._id)
+        !adminIsLinked(vehicle, req.user._id)
       ) {
         return res.status(403).json({
           message: "Forbidden: This vehicle is not linked to your account.",
@@ -397,8 +442,7 @@ router.patch(
       if (req.body.registration !== undefined) {
         const cleanedRegistration = cleanRegistration(req.body.registration);
         const duplicate = await findVehicleByRegistration(cleanedRegistration);
-
-        if (duplicate && String(duplicate._id) !== String(vehicle._id)) {
+        if (duplicate && !idEquals(duplicate._id, vehicle._id)) {
           return res.status(400).json({
             message: "Another vehicle already uses this registration.",
           });
@@ -411,12 +455,10 @@ router.patch(
       const incomingAutomaticData =
         updatePayload.lookupSource === "regcheck" &&
         hasProviderData(updatePayload);
-
-      if (wasAutomaticallySourced || incomingAutomaticData) {
-        updatePayload.lookupSource = "regcheck";
-      } else {
-        updatePayload.lookupSource = "manual";
-      }
+      updatePayload.lookupSource =
+        wasAutomaticallySourced || incomingAutomaticData
+          ? "regcheck"
+          : "manual";
 
       Object.assign(vehicle, updatePayload);
       await vehicle.save();
@@ -453,36 +495,50 @@ router.delete(
         return res.status(404).json({ message: "Vehicle not found." });
       }
 
+      if (!adminIsLinked(vehicle, req.user._id)) {
+        return res.status(403).json({
+          message: "This vehicle is not linked to your account.",
+        });
+      }
+
+      const referencedByPolicy = Boolean(
+        await Policy.exists({ vehicleId: vehicle._id }),
+      );
       const sourceType = getSourceType(vehicle);
+      const activeAdminCount = getActiveAdminIds(vehicle).size;
+      const canPermanentlyDelete =
+        sourceType === "manual" &&
+        activeAdminCount === 1 &&
+        !referencedByPolicy;
+
+      if (canPermanentlyDelete) {
+        await Vehicle.deleteOne({ _id: vehicle._id });
+        return res.status(200).json({
+          success: true,
+          action: "deleted",
+          message: "Vehicle deleted permanently because no other admin or policy uses it.",
+        });
+      }
+
+      vehicle.associatedAdmins.pull(req.user._id);
+      vehicle.removedForAdmins.addToSet(req.user._id);
+      await vehicle.save();
+
+      let retainedReason = "other admins are still associated with it";
       if (sourceType === "automatic") {
-        return res.status(403).json({
-          message: "Automatically verified vehicles cannot be deleted.",
-        });
+        retainedReason = "automatically verified vehicles are never removed from the database";
+      } else if (referencedByPolicy) {
+        retainedReason = "one or more policies reference it";
       }
 
-      if (String(vehicle.createdBy) !== String(req.user._id)) {
-        return res.status(403).json({
-          message:
-            "Only the admin who originally added this vehicle can delete it.",
-        });
-      }
-
-      const referencedByPolicy = await Policy.exists({ vehicleId: vehicle._id });
-      if (referencedByPolicy) {
-        return res.status(409).json({
-          message:
-            "This vehicle cannot be deleted because it is referenced by one or more policies.",
-        });
-      }
-
-      await Vehicle.deleteOne({ _id: vehicle._id });
       return res.status(200).json({
         success: true,
-        message: "Vehicle deleted successfully.",
+        action: "unlinked",
+        message: `Vehicle removed from your account. It remains in the database because ${retainedReason}.`,
       });
     } catch (error) {
       return res.status(500).json({
-        message: "Server error while deleting vehicle.",
+        message: "Server error while removing vehicle.",
         error: error.message,
       });
     }

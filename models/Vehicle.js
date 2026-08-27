@@ -14,6 +14,12 @@ const vehicleSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
+    removedForAdmins: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
 
     registration: {
       type: String,
@@ -79,5 +85,6 @@ const vehicleSchema = new mongoose.Schema(
 );
 
 vehicleSchema.index({ associatedAdmins: 1 });
+vehicleSchema.index({ removedForAdmins: 1 });
 
 module.exports = mongoose.model("Vehicle", vehicleSchema);
