@@ -1,5 +1,6 @@
 const cron = require("node-cron");
 const Policy = require("../../models/Policy");
+const User = require("../../models/User");
 
 // UK business time — independent of the server's timezone (BST/GMT handled automatically)
 const ukDateFmt = new Intl.DateTimeFormat("en-CA", {
@@ -53,9 +54,29 @@ const updatePolicyStatuses = async () => {
       { $set: { status: "Expired" } }
     );
 
-    if (activated.modifiedCount > 0 || expired.modifiedCount > 0) {
+    const reactivatedCustomers = await User.updateMany(
+      {
+        role: "Customer",
+        status: "Suspended",
+        suspendedUntil: { $ne: null, $lte: now },
+      },
+      {
+        $set: {
+          status: "Active",
+          suspendedAt: null,
+          suspendedUntil: null,
+          suspendedBy: null,
+        },
+      },
+    );
+
+    if (
+      activated.modifiedCount > 0 ||
+      expired.modifiedCount > 0 ||
+      reactivatedCustomers.modifiedCount > 0
+    ) {
       console.log(
-        `🔄 System Auto-Updated: ${activated.modifiedCount} Activated, ${expired.modifiedCount} Expired.`
+        `🔄 System Auto-Updated: ${activated.modifiedCount} Activated, ${expired.modifiedCount} Expired, ${reactivatedCustomers.modifiedCount} Customer Suspensions Ended.`
       );
     }
   } catch (err) {

@@ -23,10 +23,24 @@ async function verifyJWT(req, res, next) {
         .json({ message: "Session invalid: User record no longer exists" });
     }
 
+    if (
+      user.status === "Suspended" &&
+      user.suspendedUntil &&
+      new Date(user.suspendedUntil) <= new Date()
+    ) {
+      user.status = "Active";
+      user.suspendedAt = null;
+      user.suspendedUntil = null;
+      user.suspendedBy = null;
+      await user.save();
+    }
+
     if (user.status === "Suspended") {
-      return res
-        .status(403)
-        .json({ message: "Access Denied: Your account has been suspended" });
+      return res.status(403).json({
+        message: user.suspendedUntil
+          ? `Access Denied: Your account is suspended until ${new Date(user.suspendedUntil).toLocaleString("en-GB")}.`
+          : "Access Denied: Your account has been suspended.",
+      });
     }
 
     if (

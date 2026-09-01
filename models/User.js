@@ -22,7 +22,11 @@ const userSchema = new mongoose.Schema(
       trim: true,
       enum: ["Male", "Female", "Other", "Prefer not to say"],
     },
-    drivingLicenceNumber: { type: String, trim: true },
+    drivingLicenceNumber: {
+      type: String,
+      trim: true,
+      uppercase: true,
+    },
 
     address: {
       line1: String,
@@ -49,6 +53,9 @@ const userSchema = new mongoose.Schema(
       enum: ["Active", "Suspended"],
       default: "Active",
     },
+    suspendedAt: { type: Date, default: null },
+    suspendedUntil: { type: Date, default: null },
+    suspendedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     expiresAt: { type: Date, default: null }, 
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
 
@@ -98,5 +105,16 @@ userSchema.pre("save", async function (next) {
 
 userSchema.index({ role: 1, status: 1 });
 userSchema.index({ createdBy: 1 });
+userSchema.index(
+  { drivingLicenceNumber: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      role: "Customer",
+      drivingLicenceNumber: { $type: "string", $gt: "" },
+    },
+    collation: { locale: "en", strength: 2 },
+  },
+);
 
 module.exports = mongoose.model("User", userSchema);

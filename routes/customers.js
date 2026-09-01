@@ -177,7 +177,8 @@ router.get(
       }
 
       const customerDocuments = await User.find(queryFilter)
-        .populate("createdBy", "fullName email role")
+.populate("createdBy", "fullName email role")
+        .populate("suspendedBy", "fullName email role")
         .select("-password -refreshTokens")
         .sort({ createdAt: -1 });
 
@@ -220,6 +221,7 @@ router.get(
         role: "Customer",
       })
         .populate("createdBy", "fullName email role")
+        .populate("suspendedBy", "fullName email role")
         .select("-password -refreshTokens");
 
       if (!customer) {

@@ -34,7 +34,8 @@ router.get(
   async (req, res, next) => {
     try {
       const customers = await User.find({ role: "Customer" })
-        .populate("createdBy", "fullName email role")
+.populate("createdBy", "fullName email role")
+        .populate("suspendedBy", "fullName email role")
         .select("-password -refreshTokens")
         .sort({ createdAt: -1 });
 
@@ -56,7 +57,7 @@ router.patch(
   async (req, res, next) => {
     try {
       const { id } = req.params;
-      const { status } = req.body;
+      const { status, suspensionDays } = req.body;
 
       if (!status || !["Active", "Suspended"].includes(status)) {
         return res.status(400).json({
@@ -99,8 +100,29 @@ router.patch(
         }
       }
 
-      targetUser.status = status;
+      if (status === "Suspended" && targetUser.role === "Customer") {
+        const days = Number(suspensionDays);
+        if (!Number.isInteger(days) || days < 1 || days > 3650) {
+          return res.status(400).json({
+            message: "Choose a suspension duration between 1 and 3650 days.",
+          });
+        }
+        targetUser.status = "Suspended";
+        targetUser.suspendedAt = new Date();
+        targetUser.suspendedUntil = new Date(
+          Date.now() + days * 24 * 60 * 60 * 1000,
+        );
+        targetUser.suspendedBy = req.user._id;
+      } else if (status === "Active") {
+        targetUser.status = "Active";
+        targetUser.suspendedAt = null;
+        targetUser.suspendedUntil = null;
+        targetUser.suspendedBy = null;
+      } else {
+        targetUser.status = status;
+      }
       await targetUser.save();
+      await targetUser.populate("suspendedBy", "fullName email role");
 
       res.status(200).json({
         success: true,
@@ -111,6 +133,9 @@ router.patch(
           email: targetUser.email,
           role: targetUser.role,
           status: targetUser.status,
+          suspendedAt: targetUser.suspendedAt,
+          suspendedUntil: targetUser.suspendedUntil,
+          suspendedBy: targetUser.suspendedBy,
         },
       });
     } catch (error) {

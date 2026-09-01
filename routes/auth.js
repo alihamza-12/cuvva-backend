@@ -35,6 +35,7 @@ router.post(
         dateOfBirth,
         gender,
         drivingLicenceNumber,
+        address,
       } = req.body;
 
       if (role === "Super Admin") {
@@ -68,10 +69,18 @@ router.post(
             .status(400)
             .json({ message: "Gender is required for Customer accounts." });
         }
-        if (!drivingLicenceNumber) {
+        if (!drivingLicenceNumber?.trim()) {
           return res.status(400).json({
             message:
               "Driving licence number is required for Customer accounts.",
+          });
+        }
+        const missingAddressFields = ["line1", "city", "postcode", "country"].filter(
+          (field) => !address?.[field]?.trim(),
+        );
+        if (missingAddressFields.length) {
+          return res.status(400).json({
+            message: `Customer address is incomplete. Required: ${missingAddressFields.join(", ")}.`,
           });
         }
       }
@@ -81,6 +90,23 @@ router.post(
         return res
           .status(400)
           .json({ message: "User already exists with this email" });
+      }
+
+      const normalizedLicence = String(drivingLicenceNumber || "")
+        .trim()
+        .toUpperCase();
+      if (
+        role === "Customer" &&
+        (await User.findOne({
+          role: "Customer",
+          drivingLicenceNumber: normalizedLicence,
+        })
+          .collation({ locale: "en", strength: 2 })
+          .select("_id"))
+      ) {
+        return res.status(400).json({
+          message: "A customer already exists with this driving licence number.",
+        });
       }
 
       const plainPassword = password || "Cuvva@123";
@@ -106,7 +132,18 @@ router.post(
         dateOfBirth: role === "Customer" ? dateOfBirth : undefined,
         gender: role === "Customer" ? gender : undefined,
         drivingLicenceNumber:
-          role === "Customer" ? drivingLicenceNumber : undefined,
+          role === "Customer" ? normalizedLicence : undefined,
+        address:
+          role === "Customer"
+            ? {
+                line1: address.line1.trim(),
+                line2: address.line2?.trim() || "",
+                city: address.city.trim(),
+                county: address.county?.trim() || "",
+                postcode: address.postcode.trim().toUpperCase(),
+                country: address.country.trim(),
+              }
+            : undefined,
       });
 
       await newUser.save();
@@ -123,6 +160,15 @@ router.post(
         },
       });
     } catch (error) {
+      if (error?.code === 11000) {
+        const field = Object.keys(error.keyPattern || {})[0];
+        return res.status(400).json({
+          message:
+            field === "drivingLicenceNumber"
+              ? "A customer already exists with this driving licence number."
+              : "A user already exists with this email.",
+        });
+      }
       next(error);
     }
   },
@@ -143,10 +189,25 @@ router.post("/login", async (req, res, next) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
+    if (
+      user.status === "Suspended" &&
+      user.suspendedUntil &&
+      new Date(user.suspendedUntil) <= new Date()
+    ) {
+      user.status = "Active";
+      user.suspendedAt = null;
+      user.suspendedUntil = null;
+      user.suspendedBy = null;
+      await user.save();
+    }
+
     if (user.status === "Suspended") {
-      return res
-        .status(403)
-        .json({ message: "Your account is suspended. Contact a Super Admin." });
+      const untilText = user.suspendedUntil
+        ? ` until ${new Date(user.suspendedUntil).toLocaleString("en-GB")}`
+        : "";
+      return res.status(403).json({
+        message: `Your account is suspended${untilText}. Contact an administrator.`,
+      });
     }
 
     if (user.expiresAt && new Date() > user.expiresAt) {
