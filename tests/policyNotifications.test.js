@@ -120,5 +120,3 @@ const policy = (id, preferences = {}) => ({
   console.error(error);
   process.exitCode = 1;
 });
-
-
