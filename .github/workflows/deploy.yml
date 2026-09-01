@@ -20,10 +20,11 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            set -e
+
             cd /var/www/express-app
             git pull origin main
-            
-            # Using 'EOF' with single quotes protects special characters in secrets
+
             cat > .env << 'EOF'
             PORT=${{ secrets.PORT }}
             MONGODB_URI=${{ secrets.MONGODB_URI }}
@@ -31,10 +32,15 @@ jobs:
             JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
             CORS_ORIGIN=${{ secrets.CORS_ORIGIN }}
             RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}
+            ONESIGNAL_APP_ID=${{ secrets.ONESIGNAL_APP_ID }}
+            ONESIGNAL_REST_API_KEY=${{ secrets.ONESIGNAL_REST_API_KEY }}
+            PUBLIC_APP_URL=${{ secrets.PUBLIC_APP_URL }}
             NODE_ENV=production
             EOF
-            
+
+            chmod 600 .env
+
             npm install
-            
-            # Safely restarts, or starts the process in the background if not already running
-            pm2 restart all || pm2 start server.js --name "backend"
+
+            pm2 restart backend --update-env || pm2 start server.js --name "backend"
+            pm2 save
