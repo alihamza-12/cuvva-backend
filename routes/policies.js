@@ -1,4 +1,5 @@
 const express = require("express");
+const mongoose = require("mongoose");
 const router = express.Router();
 const Policy = require("../models/Policy");
 const Vehicle = require("../models/Vehicle");
@@ -401,6 +402,36 @@ router.get(
         success: false,
         message: "Server error while retrieving your policy records.",
         error: err.message,
+      });
+    }
+  },
+);
+
+router.get(
+  "/customer/:id",
+  verifyJWT,
+  authorizeRoles("Customer"),
+  async (req, res) => {
+    try {
+      if (!mongoose.isValidObjectId(req.params.id)) {
+        return res.status(404).json({ message: "Policy not found." });
+      }
+      const policy = await Policy.findOne({
+        _id: req.params.id,
+        customerId: req.user._id,
+      })
+        .populate("customerId", "fullName email role")
+        .populate("vehicleId", "registration make model colour year")
+        .populate("createdBy", "fullName role");
+
+      if (!policy) {
+        return res.status(404).json({ message: "Policy not found." });
+      }
+      return res.status(200).json({ success: true, policy });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Failed to load policy.",
+        error: error.message,
       });
     }
   },

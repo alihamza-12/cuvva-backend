@@ -40,6 +40,11 @@ const userSchema = new mongoose.Schema(
     preferredName: { type: String, trim: true, default: undefined },
     profilePhotoUrl: { type: String, trim: true, default: null },
 
+    notificationPreferences: {
+      policyUpcoming: { type: Boolean, default: true },
+      policyActive: { type: Boolean, default: true },
+    },
+
     additionalEmails: { type: [String], default: [] },
 
     lastFourDigits: { type: String, trim: true }, 

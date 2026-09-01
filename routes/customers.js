@@ -23,7 +23,7 @@ router.get(
 
       const customer = await User.findById(req.user._id)
         .select(
-          "fullName email phone dateOfBirth gender drivingLicenceNumber role status expiresAt createdBy createdAt preferredName additionalEmails profilePhotoUrl",
+          "fullName email phone dateOfBirth gender drivingLicenceNumber role status expiresAt createdBy createdAt preferredName additionalEmails profilePhotoUrl notificationPreferences",
         )
         .lean();
 
@@ -203,6 +203,59 @@ router.get(
         success: true,
         count: customers.length,
         customers,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.get(
+  "/me/notification-preferences",
+  verifyJWT,
+  authorizeRoles("Customer"),
+  async (req, res, next) => {
+    try {
+      const customer = await User.findById(req.user._id).select(
+        "notificationPreferences",
+      );
+      if (!customer) {
+        return res.status(404).json({ message: "Customer account not found" });
+      }
+      return res.status(200).json({
+        success: true,
+        preferences: customer.notificationPreferences,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.patch(
+  "/me/notification-preferences",
+  verifyJWT,
+  authorizeRoles("Customer"),
+  async (req, res, next) => {
+    try {
+      const allowed = ["policyUpcoming", "policyActive"];
+      const update = {};
+      for (const field of allowed) {
+        if (typeof req.body?.[field] === "boolean") {
+          update[`notificationPreferences.${field}`] = req.body[field];
+        }
+      }
+      if (!Object.keys(update).length) {
+        return res.status(400).json({ message: "No valid preferences provided." });
+      }
+      const customer = await User.findOneAndUpdate(
+        { _id: req.user._id, role: "Customer" },
+        { $set: update },
+        { new: true, runValidators: true },
+      ).select("notificationPreferences");
+      return res.status(200).json({
+        success: true,
+        preferences: customer.notificationPreferences,
       });
     } catch (error) {
       next(error);

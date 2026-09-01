@@ -1,6 +1,9 @@
 const cron = require("node-cron");
 const Policy = require("../../models/Policy");
 const User = require("../../models/User");
+const {
+  processPolicyNotifications,
+} = require("../../services/policyNotificationProcessor");
 
 // UK business time — independent of the server's timezone (BST/GMT handled automatically)
 const ukDateFmt = new Intl.DateTimeFormat("en-CA", {
@@ -69,6 +72,13 @@ const updatePolicyStatuses = async () => {
         },
       },
     );
+
+    try {
+      await processPolicyNotifications(now);
+    } catch (pushError) {
+      // Push delivery is deliberately isolated from policy/customer transitions.
+      console.error("[push] Notification worker failed:", pushError.message);
+    }
 
     if (
       activated.modifiedCount > 0 ||
