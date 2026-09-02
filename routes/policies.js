@@ -11,6 +11,7 @@ const {
   buildDocumentData,
 } = require("../services/pdf/generatePolicyCertificate");
 const { normalizeTime } = require("../utils/normalizeTime");
+const { normalizeIncomingDate } = require("../utils/normalizeDate");
 
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 
@@ -192,8 +193,16 @@ router.post(
         });
       }
 
-      const cleanIncomingStartDate = startDate.split("T")[0];
-      const cleanIncomingEndDate = endDate.split("T")[0];
+      const cleanIncomingStartDate = normalizeIncomingDate(startDate);
+      const cleanIncomingEndDate = normalizeIncomingDate(endDate);
+
+      if (!cleanIncomingStartDate || !cleanIncomingEndDate) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Validation Error: Enter a valid date (DD/MM/YYYY or YYYY-MM-DD).",
+        });
+      }
 
       const incomingStartTimestamp = new Date(
         `${cleanIncomingStartDate}T${startTime}:00.000Z`,
@@ -255,8 +264,8 @@ router.post(
         premiumAmount,
         excess: excess === undefined ? 500 : excess,
         cardLast4,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        startDate: new Date(cleanIncomingStartDate),
+        endDate: new Date(cleanIncomingEndDate),
         startTime,
         endTime,
         policyType,
@@ -648,8 +657,16 @@ router.put(
       }
 
       if (startDate && endDate && startTime && endTime) {
-        const cleanIncomingStartDate = startDate.split("T")[0];
-        const cleanIncomingEndDate = endDate.split("T")[0];
+        const cleanIncomingStartDate = normalizeIncomingDate(startDate);
+        const cleanIncomingEndDate = normalizeIncomingDate(endDate);
+
+        if (!cleanIncomingStartDate || !cleanIncomingEndDate) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Validation Error: Enter a valid date (DD/MM/YYYY or YYYY-MM-DD).",
+          });
+        }
 
         const incomingStartTimestamp = new Date(
           `${cleanIncomingStartDate}T${incomingStartTime}:00.000Z`,
@@ -705,8 +722,28 @@ router.put(
 
       if (premiumAmount !== undefined) policy.premiumAmount = premiumAmount;
       if (excess !== undefined) policy.excess = excess;
-      if (startDate !== undefined) policy.startDate = new Date(startDate);
-      if (endDate !== undefined) policy.endDate = new Date(endDate);
+      if (startDate !== undefined) {
+        const normalizedStartDate = normalizeIncomingDate(startDate);
+        if (!normalizedStartDate) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Validation Error: Enter a valid date (DD/MM/YYYY or YYYY-MM-DD).",
+          });
+        }
+        policy.startDate = new Date(normalizedStartDate);
+      }
+      if (endDate !== undefined) {
+        const normalizedEndDate = normalizeIncomingDate(endDate);
+        if (!normalizedEndDate) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Validation Error: Enter a valid date (DD/MM/YYYY or YYYY-MM-DD).",
+          });
+        }
+        policy.endDate = new Date(normalizedEndDate);
+      }
       if (startTime !== undefined) policy.startTime = incomingStartTime;
       if (endTime !== undefined) policy.endTime = incomingEndTime;
       if (policyType !== undefined) policy.policyType = policyType;
