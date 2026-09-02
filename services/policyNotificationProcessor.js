@@ -85,6 +85,7 @@ const deliver = async (policy, type, now) => {
       customer,
       vehicle: policy.vehicleId,
       type,
+      now,
     });
     delivery.status = "sent";
     delivery.sentAt = new Date();

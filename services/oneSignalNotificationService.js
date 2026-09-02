@@ -1,4 +1,9 @@
 const axios = require("axios");
+const {
+  policyDateTimeToInstant,
+  formatLondonDateTime,
+  humanizeDuration,
+} = require("../utils/policyDateTime");
 
 const ONESIGNAL_ENDPOINT = "https://api.onesignal.com/notifications";
 
@@ -18,17 +23,34 @@ const getPublicOrigin = () =>
       "https://cuvvapolicies.com",
   ).replace(/\/$/, "");
 
-const sendPolicyNotification = async ({ policy, customer, vehicle, type }) => {
+const sendPolicyNotification = async ({ policy, customer, vehicle, type, now = new Date() }) => {
   const { appId, apiKey } = getConfig();
   const registration = vehicle?.registration || "your vehicle";
   const policyId = String(policy._id);
   const isUpcoming = type === "UPCOMING_5_MINUTES";
+
+  // Fully dynamic copy: every value below is derived from the live policy
+  // record at send time (UK-time formatted dates plus a human-readable
+  // remaining-time countdown).
+  const start = policyDateTimeToInstant(policy.startDate, policy.startTime);
+  const end = policyDateTimeToInstant(policy.endDate, policy.endTime);
+  const startText = start
+    ? formatLondonDateTime(start)
+    : `${policy.startDate} ${policy.startTime}`;
+  const endText = end
+    ? formatLondonDateTime(end)
+    : `${policy.endDate} ${policy.endTime}`;
+
   const heading = isUpcoming
-    ? "Policy starts in 5 minutes"
+    ? start
+      ? `Policy starts in ${humanizeDuration(start.getTime() - now.getTime())}`
+      : "Policy starts in 5 minutes"
     : "Your policy is now active";
   const body = isUpcoming
-    ? `Your cover for ${registration} starts at ${policy.startTime}.`
-    : `${registration} is covered until ${policy.endTime}.`;
+    ? `Your cover for ${registration} begins ${startText} (UK time).`
+    : `${registration} is covered until ${endText} — ends in ${
+        end ? humanizeDuration(end.getTime() - now.getTime()) : "soon"
+      }.`;
 
   const payload = {
     app_id: appId,

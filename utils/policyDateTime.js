@@ -80,4 +80,31 @@ const policyDateTimeToInstant = (dateValue, timeValue) => {
   return instant;
 };
 
-module.exports = { LONDON_TIME_ZONE, policyDateTimeToInstant };
+const formatLondonDateTime = (instant) =>
+  new Intl.DateTimeFormat("en-GB", {
+    timeZone: LONDON_TIME_ZONE,
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(instant);
+
+const humanizeDuration = (milliseconds) => {
+  const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  const hours = Math.ceil(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"}`;
+  const days = Math.ceil(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"}`;
+};
+
+module.exports = {
+  LONDON_TIME_ZONE,
+  policyDateTimeToInstant,
+  formatLondonDateTime,
+  humanizeDuration,
+};
