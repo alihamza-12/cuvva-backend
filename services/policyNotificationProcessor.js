@@ -1,6 +1,9 @@
 const NotificationDelivery = require("../models/NotificationDelivery");
 const Policy = require("../models/Policy");
-const { policyDateTimeToInstant } = require("../utils/policyDateTime");
+const {
+  getPolicyWindow,
+  computePolicyStatus,
+} = require("../utils/policyStatus");
 const { sendPolicyNotification } = require("./oneSignalNotificationService");
 
 const MAX_ATTEMPTS = 3;
@@ -118,36 +121,35 @@ const processPolicyNotifications = async (now = new Date()) => {
     return;
   }
 
-  const policies = await Policy.find({
-    status: { $in: ["Upcoming", "Active"] },
-  })
-    .populate(
-      "customerId",
-      "notificationPreferences role status",
-    )
+  // Cancelled policies never notify. Everything else is judged on the DERIVED
+  // status, so a stale stored value can no longer suppress the "your policy is
+  // now active" push (a major reason the notification never arrived).
+  const policies = await Policy.find({ status: { $ne: "Cancelled" } })
+    .populate("customerId", "notificationPreferences role status")
     .populate("vehicleId", "registration make model");
 
   for (const policy of policies) {
     if (!policy.customerId || policy.customerId.role !== "Customer") continue;
     if (!policy.vehicleId || policy.customerId.status !== "Active") continue;
 
-    const start = policyDateTimeToInstant(policy.startDate, policy.startTime);
-    const end = policyDateTimeToInstant(policy.endDate, policy.endTime);
-    if (!start || !end || now >= end) continue;
+    const window = getPolicyWindow(policy);
+    if (!window) continue;
 
-    const untilStart = start.getTime() - now.getTime();
+    const nowMs = now.getTime();
+    if (nowMs > window.endMs) continue;
+
+    const derivedStatus = computePolicyStatus(policy, now);
+    const untilStart = window.startMs - nowMs;
+
     if (
-      policy.status === "Upcoming" &&
+      derivedStatus === "Upcoming" &&
       untilStart > 0 &&
       untilStart <= 5 * 60 * 1000
     ) {
       await deliver(policy, "UPCOMING_5_MINUTES", now);
     }
 
-    if (
-      policy.status === "Active" &&
-      now >= start
-    ) {
+    if (derivedStatus === "Active") {
       await deliver(policy, "ACTIVE", now);
     }
   }

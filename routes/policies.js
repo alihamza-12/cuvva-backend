@@ -12,6 +12,11 @@ const {
 } = require("../services/pdf/generatePolicyCertificate");
 const { normalizeTime } = require("../utils/normalizeTime");
 const { normalizeIncomingDate } = require("../utils/normalizeDate");
+const {
+  computePolicyStatus,
+  withDerivedStatus,
+  withDerivedStatuses,
+} = require("../utils/policyStatus");
 
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 
@@ -258,6 +263,19 @@ router.post(
         }
       }
 
+      // A policy created inside its own cover window must be born "Active",
+      // not left "Upcoming" until the next background tick.
+      const initialStatus = computePolicyStatus(
+        {
+          status: "Upcoming",
+          startDate: new Date(cleanIncomingStartDate),
+          endDate: new Date(cleanIncomingEndDate),
+          startTime,
+          endTime,
+        },
+        new Date(),
+      );
+
       const newPolicy = await Policy.create({
         customerId,
         vehicleId,
@@ -272,6 +290,7 @@ router.post(
         coverageType,
         underwriter,
         internalNotes,
+        status: initialStatus,
         createdBy: req.user._id, 
       });
 
@@ -333,7 +352,7 @@ router.post(
       return res.status(201).json({
         success: true,
         message: "Insurance policy transaction executed successfully.",
-        policy: newPolicy,
+        policy: withDerivedStatus(newPolicy),
       });
     } catch (err) {
       return res.status(500).json({
@@ -360,7 +379,7 @@ router.get(
       return res.status(200).json({
         success: true,
         count: policies.length,
-        policies,
+        policies: withDerivedStatuses(policies),
       });
     } catch (err) {
       return res.status(500).json({
@@ -404,7 +423,7 @@ router.get(
       return res.status(200).json({
         success: true,
         count: policies.length,
-        policies,
+        policies: withDerivedStatuses(policies),
       });
     } catch (err) {
       return res.status(500).json({
@@ -436,7 +455,10 @@ router.get(
       if (!policy) {
         return res.status(404).json({ message: "Policy not found." });
       }
-      return res.status(200).json({ success: true, policy });
+      return res.status(200).json({
+        success: true,
+        policy: withDerivedStatus(policy),
+      });
     } catch (error) {
       return res.status(500).json({
         message: "Failed to load policy.",
@@ -591,7 +613,7 @@ router.get(
 
       return res.status(200).json({
         success: true,
-        policy,
+        policy: withDerivedStatus(policy),
       });
     } catch (err) {
       return res.status(500).json({
@@ -749,8 +771,23 @@ router.put(
       if (policyType !== undefined) policy.policyType = policyType;
       if (coverageType !== undefined) policy.coverageType = coverageType;
       if (underwriter !== undefined) policy.underwriter = underwriter;
-      if (status !== undefined) policy.status = status;
+      /*
+       * Only "Cancelled" (and un-cancelling) is a genuine manual decision.
+       * Upcoming / Active / Expired are always derived from the cover window,
+       * otherwise the edit screen — which pre-fills `status` with the value it
+       * loaded earlier — could re-submit a stale "Expired" and kill a policy
+       * that is still live.
+       */
+      if (status === "Cancelled") {
+        policy.status = "Cancelled";
+      } else if (status !== undefined && policy.status === "Cancelled") {
+        policy.status = "Upcoming"; // un-cancel; recomputed immediately below
+      }
       if (internalNotes !== undefined) policy.internalNotes = internalNotes;
+
+      if (policy.status !== "Cancelled") {
+        policy.status = computePolicyStatus(policy, new Date());
+      }
 
       await policy.save();
 
@@ -762,7 +799,7 @@ router.put(
       return res.status(200).json({
         success: true,
         message: "Insurance policy updated successfully.",
-        policy: updated,
+        policy: withDerivedStatus(updated),
       });
     } catch (err) {
       return res.status(500).json({

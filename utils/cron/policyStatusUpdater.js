@@ -4,7 +4,7 @@ const User = require("../../models/User");
 const {
   processPolicyNotifications,
 } = require("../../services/policyNotificationProcessor");
-const { policyDateTimeToInstant } = require("../../utils/policyDateTime");
+const { computePolicyStatus } = require("../../utils/policyStatus");
 
 // UK business time — independent of the server's timezone (BST/GMT handled automatically)
 const ukDateFmt = new Intl.DateTimeFormat("en-CA", {
@@ -21,78 +21,56 @@ const ukTimeFmt = new Intl.DateTimeFormat("en-GB", {
 });
 
 /*
- * Status is decided by the SAME Europe/London wall-clock instants used by the
- * notification processor and the customer UI (policyDateTimeToInstant):
+ * Status is derived by utils/policyStatus.computePolicyStatus — the single
+ * source of truth shared with the REST layer, the push processor and the UI:
  *
- *   now <  start        -> stays Upcoming
- *   start <= now < end  -> Active
- *   now >= end          -> Expired
+ *   now <  start                  -> Upcoming
+ *   start <= now <= end + 59.999s -> Active
+ *   now  >  end + 59.999s         -> Expired
+ *   Cancelled                     -> untouched (manual terminal state)
  *
- * The old implementation compared stored UTC-midnight Date objects against
- * UK date strings and lexicographic time strings, which could flip a policy
- * to Expired at the wrong moment (e.g. exactly when its start time arrived).
- * Evaluating real instants in JS removes every timezone/type edge case.
+ * IMPORTANT: this worker now re-evaluates EVERY non-cancelled policy, not just
+ * the Upcoming/Active ones. The old query excluded "Expired", so any policy
+ * that was wrongly expired (for example an overnight window whose end instant
+ * resolved before its start) could never recover — it stayed Expired forever
+ * even while sitting inside its own cover window. Re-checking everything means
+ * such a row self-heals on the next tick.
  */
 const updatePolicyStatuses = async () => {
   try {
     const now = new Date();
-    const nowMs = now.getTime();
     const currentDateStr = ukDateFmt.format(now); // YYYY-MM-DD in UK
     const currentTimeStr = ukTimeFmt.format(now); // HH:MM in UK
 
-    console.log(
-      `⏱️ Running Background Status Check [${currentDateStr} ${currentTimeStr} UK]...`,
+    // Every non-cancelled policy is re-evaluated so a wrongly-stored status
+    // (in either direction) is corrected on the very next tick.
+    const policies = await Policy.find({ status: { $ne: "Cancelled" } }).select(
+      "_id status startDate startTime endDate endTime",
     );
 
-    const [upcomingPolicies, activePolicies] = await Promise.all([
-      Policy.find({ status: "Upcoming" }).select(
-        "_id startDate startTime endDate endTime",
-      ),
-      Policy.find({ status: "Active" }).select(
-        "_id startDate startTime endDate endTime",
-      ),
-    ]);
+    const buckets = { Upcoming: [], Active: [], Expired: [] };
 
-    const activateIds = [];
-    const expireIds = [];
-
-    for (const policy of upcomingPolicies) {
-      const start = policyDateTimeToInstant(policy.startDate, policy.startTime);
-      const end = policyDateTimeToInstant(policy.endDate, policy.endTime);
-      if (!start || !end) continue;
-      if (nowMs >= end.getTime()) {
-        // Start and end both passed while it was still Upcoming.
-        expireIds.push(policy._id);
-      } else if (nowMs >= start.getTime()) {
-        activateIds.push(policy._id);
+    for (const policy of policies) {
+      const derived = computePolicyStatus(policy, now);
+      if (!derived || derived === "Cancelled") continue;
+      if (derived !== policy.status && buckets[derived]) {
+        buckets[derived].push(policy._id);
       }
     }
 
-    for (const policy of activePolicies) {
-      const end = policyDateTimeToInstant(policy.endDate, policy.endTime);
-      if (end && nowMs >= end.getTime()) {
-        expireIds.push(policy._id);
-      }
-    }
-
-    let activatedCount = 0;
-    let expiredCount = 0;
-
-    if (activateIds.length > 0) {
-      const activated = await Policy.updateMany(
-        { _id: { $in: activateIds } },
-        { $set: { status: "Active" } },
+    const applyStatus = async (status) => {
+      const ids = buckets[status];
+      if (!ids.length) return 0;
+      const result = await Policy.updateMany(
+        { _id: { $in: ids }, status: { $ne: "Cancelled" } },
+        { $set: { status } },
       );
-      activatedCount = activated.modifiedCount;
-    }
+      return result.modifiedCount;
+    };
 
-    if (expireIds.length > 0) {
-      const expired = await Policy.updateMany(
-        { _id: { $in: expireIds } },
-        { $set: { status: "Expired" } },
-      );
-      expiredCount = expired.modifiedCount;
-    }
+    const activatedCount = await applyStatus("Active");
+    const expiredCount = await applyStatus("Expired");
+    const revertedCount = await applyStatus("Upcoming");
 
     const reactivatedCustomers = await User.updateMany(
       {
@@ -120,10 +98,11 @@ const updatePolicyStatuses = async () => {
     if (
       activatedCount > 0 ||
       expiredCount > 0 ||
+      revertedCount > 0 ||
       reactivatedCustomers.modifiedCount > 0
     ) {
       console.log(
-        `🔄 System Auto-Updated: ${activatedCount} Activated, ${expiredCount} Expired, ${reactivatedCustomers.modifiedCount} Customer Suspensions Ended.`,
+        `🔄 [${currentDateStr} ${currentTimeStr} UK] System Auto-Updated: ${activatedCount} Activated, ${expiredCount} Expired, ${revertedCount} Restored to Upcoming, ${reactivatedCustomers.modifiedCount} Customer Suspensions Ended.`,
       );
     }
   } catch (err) {
@@ -132,7 +111,10 @@ const updatePolicyStatuses = async () => {
 };
 
 const startPolicyStatusUpdater = () => {
-  cron.schedule("* * * * *", updatePolicyStatuses);
+  // Every 15 seconds so transitions land promptly (was once a minute).
+  cron.schedule("*/15 * * * * *", updatePolicyStatuses);
+  // Run once immediately so a restart never leaves stale statuses behind.
+  updatePolicyStatuses().catch(() => {});
   console.log(
     "[cron] Policy Status Automated Worker Scheduled Successfully (UK time).",
   );
