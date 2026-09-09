@@ -17,6 +17,9 @@ const {
   withDerivedStatus,
   withDerivedStatuses,
 } = require("../utils/policyStatus");
+const {
+  runPolicyRetention,
+} = require("../utils/cron/policyRetentionCleaner");
 
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 
@@ -70,6 +73,44 @@ const formatPolicyDuration = (startTimestamp, endTimestamp) => {
     .filter(Boolean)
     .join(" ");
 };
+
+/*
+ * Manual trigger for the retention sweep, so it can be verified without
+ * waiting for the next scheduled run (00:00 / 06:00 / 12:00 / 18:00 UK).
+ *
+ * POST /api/policies/retention/run?dryRun=true reports what WOULD be deleted
+ * and changes nothing — always worth running first against real data.
+ *
+ * Declared before the "/:id" routes so "retention" is never read as an id.
+ */
+router.post(
+  "/retention/run",
+  verifyJWT,
+  authorizeRoles("Super Admin"),
+  async (req, res) => {
+    try {
+      const dryRun =
+        req.query.dryRun === "true" || req.query.dryRun === "1";
+
+      const summary = await runPolicyRetention({ dryRun });
+
+      return res.status(200).json({
+        success: true,
+        dryRun,
+        deleted: summary.deleted,
+        skipped: summary.skipped,
+        failed: summary.failed,
+        ...(dryRun ? { candidates: summary.candidates } : {}),
+      });
+    } catch (error) {
+      console.error("[policies:/retention/run]", error.message);
+      return res.status(500).json({
+        success: false,
+        message: "Retention sweep failed.",
+      });
+    }
+  },
+);
 
 router.post(
   "/",

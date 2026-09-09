@@ -4,6 +4,9 @@ const seedSuperAdmin = require("./utils/seedSuperAdmin");
 const {
   startPolicyStatusUpdater,
 } = require("./utils/cron/policyStatusUpdater");
+const {
+  startPolicyRetentionCleaner,
+} = require("./utils/cron/policyRetentionCleaner");
 
 const PORT = process.env.PORT || 3000;
 
@@ -18,6 +21,7 @@ async function start() {
   });
 
   startPolicyStatusUpdater();
+  startPolicyRetentionCleaner();
 }
 
 start().catch((err) => {

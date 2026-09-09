@@ -1,6 +1,10 @@
 const express = require("express");
 const User = require("../models/User");
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
+const {
+  getCustomerVehicleHistory,
+  isValidObjectId,
+} = require("../services/customerVehicleHistory");
 
 const router = express.Router();
 
@@ -378,6 +382,70 @@ router.patch(
       });
     } catch (error) {
       next(error);
+    }
+  },
+);
+
+/*
+ * Every vehicle a customer has previously been insured on.
+ *
+ * Powers the vehicle dropdown on the Create Policy screens so an admin can
+ * re-insure an existing car without typing a plate or spending a RegCheck
+ * credit. Merges live policies with the retention archive.
+ *
+ * The existing GET /api/policies/customer/:id is Customer-only, hence this
+ * separate admin-authorised route.
+ */
+router.get(
+  "/:customerId/vehicles",
+  verifyJWT,
+  authorizeRoles("Super Admin", "Sub Admin"),
+  async (req, res) => {
+    try {
+      const { customerId } = req.params;
+
+      if (!isValidObjectId(customerId)) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid customer id." });
+      }
+
+      const customer = await User.findOne({
+        _id: customerId,
+        role: "Customer",
+      }).select("_id createdBy");
+
+      if (!customer) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Customer not found." });
+      }
+
+      // A Sub Admin may only view customers they created.
+      if (req.user.role === "Sub Admin") {
+        const ownsCustomer =
+          customer.createdBy &&
+          customer.createdBy.toString() === req.user._id.toString();
+
+        if (!ownsCustomer) {
+          return res.status(403).json({
+            success: false,
+            message:
+              "Forbidden: You can only view vehicles for customers you created.",
+          });
+        }
+      }
+
+      const vehicles = await getCustomerVehicleHistory(customerId);
+
+      // Always 200 with an array — an empty history is not an error.
+      return res.status(200).json({ success: true, vehicles });
+    } catch (error) {
+      console.error("[customers:/:customerId/vehicles]", error.message);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to load the customer's vehicle history.",
+      });
     }
   },
 );

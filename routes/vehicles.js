@@ -4,6 +4,7 @@ const Vehicle = require("../models/Vehicle");
 const Policy = require("../models/Policy");
 
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
+const { normalizeCaseFields } = require("../utils/normalizeCase");
 
 const VEHICLE_FIELDS = [
   "make",
@@ -84,7 +85,11 @@ const buildVehiclePayload = (body) => {
   if (payload.fuelType !== undefined) {
     payload.fuelType = String(payload.fuelType).trim().toUpperCase();
   }
-  return payload;
+
+  // Safety net: force the remaining code-style fields (abiCode, engineCode,
+  // engineNumber, euroStatus, wheelplan, registration) to uppercase, so the
+  // stored value is correct no matter which write path is used.
+  return normalizeCaseFields(payload);
 };
 
 const objectIdOf = (value) => value?._id || value;
@@ -370,6 +375,68 @@ router.get(
         message: "Server error during vehicle look up sequence.",
         error: err.message,
       });
+    }
+  },
+);
+
+/*
+ * Registration prefix search — step 2 of the Create Policy vehicle cascade.
+ *
+ * Lets the dropdown suggest partial matches from our own database before any
+ * paid RegCheck call is considered. The regex is anchored so the unique index
+ * on `registration` can be used.
+ *
+ * NOTE: declared before "/:id"-style routes are reached for GET so that
+ * "search" is never mistaken for an id.
+ */
+router.get(
+  "/search",
+  authorizeRoles("Super Admin", "Sub Admin"),
+  async (req, res) => {
+    try {
+      const rawQuery = cleanRegistration(req.query.q || "");
+      const limit = Math.min(Number(req.query.limit) || 10, 25);
+
+      if (!rawQuery) {
+        return res.status(200).json({ success: true, vehicles: [] });
+      }
+
+      // Escape regex metacharacters — cleanRegistration already strips them,
+      // but this keeps the query safe if that helper ever changes.
+      const safeQuery = rawQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+      const scopeFilter =
+        req.user.role === "Sub Admin"
+          ? {
+              $and: [
+                {
+                  $or: [
+                    { createdBy: req.user._id },
+                    { associatedAdmins: req.user._id },
+                  ],
+                },
+                { removedForAdmins: { $ne: req.user._id } },
+              ],
+            }
+          : {};
+
+      const vehicles = await Vehicle.find({
+        ...scopeFilter,
+        registration: { $regex: `^${safeQuery}`, $options: "i" },
+      })
+        .select(
+          "registration make model colour yearOfManufacture fuelType bodyStyle transmission engineCapacity vehicleIdentificationNumber lookupSource createdAt updatedAt",
+        )
+        .sort({ registration: 1 })
+        .limit(limit)
+        .lean();
+
+      return res.status(200).json({ success: true, vehicles });
+    } catch (error) {
+      console.error("[vehicles:/search]", error.message);
+      return res
+        .status(500)
+        .json({ success: false, message: "Vehicle search failed." });
     }
   },
 );
