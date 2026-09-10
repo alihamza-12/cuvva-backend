@@ -340,8 +340,8 @@ The server will:
 4. Begin listening on `http://localhost:3000`.
 
 > **Default seeded Super Admin:**
-> - Email: `superadmin@cuvvaclone.com`
-> - Password: `SuperAdminPass2026!`
+> - Email: `supe----------------`
+> - Password: `Super------------------`
 > ⚠️ **Change this credential immediately for any non-local environment.**
 
 ### Available Scripts
