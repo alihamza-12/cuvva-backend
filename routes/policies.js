@@ -20,6 +20,9 @@ const {
 const {
   runPolicyRetention,
 } = require("../utils/cron/policyRetentionCleaner");
+const AuditLog = require("../models/AuditLog");
+const NotificationDelivery = require("../models/NotificationDelivery");
+const CustomerVehicleHistory = require("../models/CustomerVehicleHistory");
 
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 
@@ -847,6 +850,108 @@ router.put(
         success: false,
         message: "Server error while updating insurance policy.",
         error: err.message,
+      });
+    }
+  },
+);
+
+/*
+ * Permanently delete a policy (Super Admin only).
+ *
+ * This is a hard delete requested from the dashboard, distinct from the
+ * automatic 20-day retention sweep. The same ordering is used, because the
+ * Policy row is the only thing linking a customer to a vehicle:
+ *
+ *   1. archive the customer -> vehicle link  (abort if it fails)
+ *   2. remove notification delivery rows
+ *   3. write an audit entry
+ *   4. delete the policy itself
+ *
+ * Archiving first means the vehicle still appears in the customer's
+ * "previous vehicles" dropdown after the policy is gone.
+ */
+router.delete(
+  "/:id",
+  verifyJWT,
+  authorizeRoles("Super Admin"),
+  async (req, res) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid policy id." });
+      }
+
+      const policy = await Policy.findById(req.params.id);
+      if (!policy) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Policy not found." });
+      }
+
+      // 1. Preserve the customer -> vehicle relationship before it is lost.
+      if (policy.customerId && policy.vehicleId) {
+        const window = getPolicyWindow(policy);
+        try {
+          await CustomerVehicleHistory.updateOne(
+            { customerId: policy.customerId, vehicleId: policy.vehicleId },
+            {
+              $inc: { policyCount: 1 },
+              $max: {
+                lastUsedAt: window ? new Date(window.endMs) : new Date(),
+              },
+              $set: { lastPolicyNumber: policy.policyNumber || null },
+            },
+            { upsert: true },
+          );
+        } catch (archiveError) {
+          console.error(
+            "[policies:delete] archive failed:",
+            archiveError.message,
+          );
+          return res.status(500).json({
+            success: false,
+            message:
+              "Could not archive the vehicle history for this policy, so it was not deleted.",
+          });
+        }
+      }
+
+      // 2. Related notification rows.
+      await NotificationDelivery.deleteMany({ policyId: policy._id });
+
+      // 3. Audit trail, written while the policy still exists.
+      await AuditLog.create({
+        actorId: req.user._id,
+        actorRole: req.user.role,
+        actorEmail: req.user.email,
+        action: "POLICY_DELETED",
+        module: "policies",
+        targetId: String(policy._id),
+        success: true,
+        payloadBefore: {
+          policyNumber: policy.policyNumber || null,
+          customerId: String(policy.customerId || ""),
+          vehicleId: String(policy.vehicleId || ""),
+          startDate: policy.startDate,
+          endDate: policy.endDate,
+          status: policy.status,
+          reason: "manual:super-admin-dashboard",
+        },
+      });
+
+      // 4. Remove the policy.
+      await Policy.deleteOne({ _id: policy._id });
+
+      return res.status(200).json({
+        success: true,
+        message: `Policy ${policy.policyNumber || policy._id} deleted permanently.`,
+      });
+    } catch (error) {
+      console.error("[policies:delete]", error.message);
+      return res.status(500).json({
+        success: false,
+        message: "Server error while deleting the policy.",
       });
     }
   },

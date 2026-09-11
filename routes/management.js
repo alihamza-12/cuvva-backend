@@ -1,6 +1,10 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const User = require("../models/User");
+const Policy = require("../models/Policy");
+const AuditLog = require("../models/AuditLog");
+const NotificationDelivery = require("../models/NotificationDelivery");
+const CustomerVehicleHistory = require("../models/CustomerVehicleHistory");
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
 
 const router = express.Router();
@@ -395,6 +399,119 @@ router.patch(
           (customer) => customer.policyCreationRestricted,
         ).length,
         customers,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/*
+ * Permanently delete a customer (Super Admin only).
+ *
+ * A customer cannot be removed on its own: their policies reference them, and
+ * those policies carry the only customer -> vehicle link in the system. So the
+ * cascade is:
+ *
+ *   1. archive every customer -> vehicle pair from their policies
+ *   2. delete their notification delivery rows
+ *   3. delete their policies
+ *   4. write an audit entry
+ *   5. delete the customer
+ *
+ * Only accounts with role "Customer" can be removed here, so an admin account
+ * can never be deleted through this endpoint by mistake.
+ */
+router.delete(
+  "/customers/:id",
+  verifyJWT,
+  authorizeRoles("Super Admin"),
+  async (req, res, next) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid customer id." });
+      }
+
+      const customer = await User.findById(req.params.id);
+      if (!customer) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Customer not found." });
+      }
+
+      if (customer.role !== "Customer") {
+        return res.status(400).json({
+          success: false,
+          message: "Only customer accounts can be deleted from here.",
+        });
+      }
+
+      const policies = await Policy.find({ customerId: customer._id }).select(
+        "_id policyNumber vehicleId endDate",
+      );
+
+      // 1. Keep the vehicle links alive for reporting/history.
+      for (const policy of policies) {
+        if (!policy.vehicleId) continue;
+        try {
+          await CustomerVehicleHistory.updateOne(
+            { customerId: customer._id, vehicleId: policy.vehicleId },
+            {
+              $inc: { policyCount: 1 },
+              $max: { lastUsedAt: policy.endDate || new Date() },
+              $set: { lastPolicyNumber: policy.policyNumber || null },
+            },
+            { upsert: true },
+          );
+        } catch (archiveError) {
+          console.error(
+            "[management:deleteCustomer] archive failed:",
+            archiveError.message,
+          );
+          return res.status(500).json({
+            success: false,
+            message:
+              "Could not archive this customer's vehicle history, so nothing was deleted.",
+          });
+        }
+      }
+
+      const policyIds = policies.map((policy) => policy._id);
+
+      // 2 + 3. Remove notifications, then the policies themselves.
+      if (policyIds.length) {
+        await NotificationDelivery.deleteMany({ policyId: { $in: policyIds } });
+        await Policy.deleteMany({ _id: { $in: policyIds } });
+      }
+
+      // 4. Audit before the record disappears.
+      await AuditLog.create({
+        actorId: req.user._id,
+        actorRole: req.user.role,
+        actorEmail: req.user.email,
+        action: "CUSTOMER_DELETED",
+        module: "management",
+        targetId: String(customer._id),
+        success: true,
+        payloadBefore: {
+          fullName: customer.fullName,
+          email: customer.email,
+          policiesDeleted: policyIds.length,
+          reason: "manual:super-admin-dashboard",
+        },
+      });
+
+      // 5. Finally the customer.
+      await User.deleteOne({ _id: customer._id });
+
+      return res.status(200).json({
+        success: true,
+        message: `Customer ${customer.fullName} and ${policyIds.length} related ${
+          policyIds.length === 1 ? "policy" : "policies"
+        } deleted permanently.`,
+        policiesDeleted: policyIds.length,
       });
     } catch (error) {
       next(error);
