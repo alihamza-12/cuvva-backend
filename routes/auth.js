@@ -174,7 +174,7 @@ router.post(
   },
 );
 
-router.post("/login", async (req, res, next) => {
+router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -184,9 +184,14 @@ router.post("/login", async (req, res, next) => {
         .json({ message: "Please provide both email and password" });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await User.findOne({
+      email: email.toLowerCase().trim(),
+    });
+
     if (!user) {
-      return res.status(401).json({ message: "Invalid credentials" });
+      return res.status(401).json({
+        message: "Invalid credentials",
+      });
     }
 
     if (
@@ -232,11 +237,15 @@ router.post("/login", async (req, res, next) => {
       }
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(401).json({ message: "Invalid credentials" });
+    const passwordIsCorrect = await bcrypt.compare(password, user.password);
+
+    if (!passwordIsCorrect) {
+      return res.status(401).json({
+        message: "Invalid credentials",
+      });
     }
 
+    // Successful login - keep existing token and cookie logic
     const accessToken = jwt.sign(
       { id: user._id, role: user.role, email: user.email },
       process.env.JWT_SECRET,
@@ -256,12 +265,12 @@ router.post("/login", async (req, res, next) => {
 
     res.cookie("accessToken", accessToken, {
       ...cookieOptions,
-      maxAge: 15 * 60 * 1000, 
+      maxAge: 15 * 60 * 1000,
     });
 
     res.cookie("refreshToken", refreshToken, {
       ...cookieOptions,
-      maxAge: 7 * 24 * 60 * 60 * 1000, 
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     if (user.role === "Customer") {
@@ -293,7 +302,10 @@ router.post("/login", async (req, res, next) => {
       },
     });
   } catch (error) {
-    next(error);
+    console.error("[auth] Login error:", error);
+    return res.status(500).json({
+      message: "Login service temporarily unavailable",
+    });
   }
 });
 
