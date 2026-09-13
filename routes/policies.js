@@ -14,6 +14,7 @@ const { normalizeTime } = require("../utils/normalizeTime");
 const { normalizeIncomingDate } = require("../utils/normalizeDate");
 const {
   computePolicyStatus,
+  getPolicyWindow,
   withDerivedStatus,
   withDerivedStatuses,
 } = require("../utils/policyStatus");
@@ -86,6 +87,26 @@ const formatPolicyDuration = (startTimestamp, endTimestamp) => {
  *
  * Declared before the "/:id" routes so "retention" is never read as an id.
  */
+/*
+ * Build marker — lets you confirm which version of this file the server is
+ * actually running. If "deleteSupport" is false or missing, the running process
+ * is still on an older build and must be restarted after deploying.
+ *
+ * GET /api/policies/_build   (any signed-in admin)
+ */
+router.get(
+  "/_build",
+  verifyJWT,
+  authorizeRoles("Super Admin", "Sub Admin"),
+  (req, res) =>
+    res.status(200).json({
+      success: true,
+      deleteSupport: true,
+      deleteRoles: ["Super Admin", "Sub Admin"],
+      build: "delete-fix-2",
+    }),
+);
+
 router.post(
   "/retention/run",
   verifyJWT,
@@ -873,7 +894,7 @@ router.put(
 router.delete(
   "/:id",
   verifyJWT,
-  authorizeRoles("Super Admin"),
+  authorizeRoles("Super Admin", "Sub Admin"),
   async (req, res) => {
     try {
       if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -887,6 +908,20 @@ router.delete(
         return res
           .status(404)
           .json({ success: false, message: "Policy not found." });
+      }
+
+      // A Sub Admin may only delete policies they created themselves.
+      if (req.user.role === "Sub Admin") {
+        const ownsPolicy =
+          policy.createdBy &&
+          policy.createdBy.toString() === req.user._id.toString();
+
+        if (!ownsPolicy) {
+          return res.status(403).json({
+            success: false,
+            message: "Forbidden: You can only delete policies you created.",
+          });
+        }
       }
 
       // 1. Preserve the customer -> vehicle relationship before it is lost.
@@ -936,7 +971,7 @@ router.delete(
           startDate: policy.startDate,
           endDate: policy.endDate,
           status: policy.status,
-          reason: "manual:super-admin-dashboard",
+          reason: `manual:${req.user.role === "Sub Admin" ? "sub" : "super"}-admin-dashboard`,
         },
       });
 

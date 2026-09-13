@@ -22,6 +22,30 @@ async function start() {
 
   startPolicyStatusUpdater();
   startPolicyRetentionCleaner();
+
+  /*
+   * Startup self-check for the delete endpoints.
+   *
+   * A missing import is a runtime error, so it cannot be caught by `node
+   * --check` — it only surfaces when an admin presses Confirm Delete. This
+   * verifies the helper resolves at boot and prints which roles may delete, so
+   * a stale build is obvious in the logs instead of failing silently later.
+   */
+  try {
+    const { getPolicyWindow } = require("./utils/policyStatus");
+    if (typeof getPolicyWindow !== "function") {
+      throw new Error("getPolicyWindow is not available");
+    }
+    console.log(
+      "[startup] Delete endpoints ready (Super Admin, Sub Admin) — policy + customer.",
+    );
+  } catch (selfCheckError) {
+    console.error(
+      "[startup] DELETE ENDPOINTS BROKEN:",
+      selfCheckError.message,
+      "- deploy the latest routes/policies.js and restart.",
+    );
+  }
 }
 
 start().catch((err) => {

@@ -425,7 +425,7 @@ router.patch(
 router.delete(
   "/customers/:id",
   verifyJWT,
-  authorizeRoles("Super Admin"),
+  authorizeRoles("Super Admin", "Sub Admin"),
   async (req, res, next) => {
     try {
       if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -446,6 +446,20 @@ router.delete(
           success: false,
           message: "Only customer accounts can be deleted from here.",
         });
+      }
+
+      // A Sub Admin may only delete customers they created themselves.
+      if (req.user.role === "Sub Admin") {
+        const ownsCustomer =
+          customer.createdBy &&
+          customer.createdBy.toString() === req.user._id.toString();
+
+        if (!ownsCustomer) {
+          return res.status(403).json({
+            success: false,
+            message: "Forbidden: You can only delete customers you created.",
+          });
+        }
       }
 
       const policies = await Policy.find({ customerId: customer._id }).select(
@@ -499,7 +513,7 @@ router.delete(
           fullName: customer.fullName,
           email: customer.email,
           policiesDeleted: policyIds.length,
-          reason: "manual:super-admin-dashboard",
+          reason: `manual:${req.user.role === "Sub Admin" ? "sub" : "super"}-admin-dashboard`,
         },
       });
 
