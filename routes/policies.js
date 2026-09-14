@@ -861,6 +861,84 @@ router.put(
         .populate("vehicleId", "registration make model colour")
         .populate("createdBy", "fullName role");
 
+      /*
+       * Re-send the policy email with the UPDATED values.
+       *
+       * Deliberately reuses the exact same pieces as policy creation — the same
+       * generatePolicyCertificatePdf(), the same sendPolicyEmail(), the same
+       * template and the same attachments — so nothing about the mail setup
+       * changes. The only difference is that the values are the freshly saved
+       * ones, and the certificate PDF is regenerated from the updated policy.
+       *
+       * Sent fire-and-forget (like creation) so a mail failure can never make
+       * the update itself fail: the policy is already saved at this point.
+       */
+      try {
+        const emailCustomer = await User.findById(policy.customerId);
+        const emailVehicle = await Vehicle.findById(policy.vehicleId);
+
+        if (emailCustomer?.email && emailVehicle) {
+          const updatedPolicyPdf = await generatePolicyCertificatePdf({
+            policy,
+            customer: emailCustomer,
+            vehicle: emailVehicle,
+          });
+
+          // Recompute the duration from the saved window so it matches the
+          // new dates/times rather than the values sent in the request.
+          const window = getPolicyWindow(policy);
+          const duration = window
+            ? formatPolicyDuration(window.startMs, window.endMs)
+            : "";
+
+          const customerFullName =
+            [emailCustomer.firstName, emailCustomer.lastName]
+              .filter(Boolean)
+              .join(" ")
+              .trim() ||
+            emailCustomer.fullName?.trim() ||
+            "Valued Customer";
+
+          const emailData = {
+            customerFullName,
+            customerFirstName: customerFullName.split(/\s+/)[0] || "there",
+            vehicleMake: emailVehicle.make,
+            vehicleModel: emailVehicle.model,
+            registration: emailVehicle.registration,
+            startDateStr: formatEmailPolicyDateTime(
+              policy.startDate,
+              policy.startTime,
+            ),
+            endDateStr: formatEmailPolicyDateTime(
+              policy.endDate,
+              policy.endTime,
+            ),
+            duration,
+            price: Number(policy.premiumAmount).toFixed(2),
+            cardBrand: "Card",
+            cardLast4: policy.cardLast4,
+            policyNumber: policy.policyNumber || policy._id.toString(),
+            underwriter: policy.underwriter,
+          };
+
+          sendPolicyEmail(
+            emailCustomer.email,
+            emailData,
+            updatedPolicyPdf,
+          ).catch((emailError) => {
+            console.error(
+              "Failed to send updated policy email:",
+              emailError.message,
+            );
+          });
+        }
+      } catch (documentError) {
+        console.error(
+          "Failed to generate updated policy certificate:",
+          documentError.message,
+        );
+      }
+
       return res.status(200).json({
         success: true,
         message: "Insurance policy updated successfully.",

@@ -27,7 +27,7 @@ router.get(
 
       const customer = await User.findById(req.user._id)
         .select(
-          "fullName email phone dateOfBirth gender drivingLicenceNumber role status expiresAt createdBy createdAt preferredName additionalEmails profilePhotoUrl notificationPreferences",
+          "fullName email phone dateOfBirth gender drivingLicenceNumber role status expiresAt createdBy createdAt preferredName additionalEmails profilePhotoUrl notificationPreferences address",
         )
         .lean();
 
@@ -51,14 +51,15 @@ router.patch(
   authorizeRoles("Customer"),
   async (req, res, next) => {
     try {
-      const { preferredName, additionalEmail, phone, profilePhotoUrl } =
+      const { preferredName, additionalEmail, phone, profilePhotoUrl, address } =
         req.body || {};
 
       if (
         preferredName === undefined &&
         additionalEmail === undefined &&
         phone === undefined &&
-        profilePhotoUrl === undefined
+        profilePhotoUrl === undefined &&
+        address === undefined
       ) {
         return res.status(400).json({ message: "No update fields provided." });
       }
@@ -141,6 +142,62 @@ router.patch(
         customer.profilePhotoUrl = profilePhotoUrl;
       }
 
+      /*
+       * Residential address, edited by the customer from the app.
+       *
+       * Stored on the same User.address sub-document that admin creation
+       * writes, so the policy certificate PDF and the in-app policy document
+       * immediately pick up the new value — they both read customer.address.
+       *
+       * Only the keys actually sent are touched, so a partial update cannot
+       * wipe fields the form does not show (county/country).
+       */
+      if (address !== undefined) {
+        if (typeof address !== "object" || Array.isArray(address)) {
+          return res
+            .status(400)
+            .json({ message: "Address must be an object." });
+        }
+
+        const existingAddress = customer.address || {};
+        const nextAddress = {
+          line1: existingAddress.line1 || "",
+          line2: existingAddress.line2 || "",
+          city: existingAddress.city || "",
+          county: existingAddress.county || "",
+          postcode: existingAddress.postcode || "",
+          country: existingAddress.country || "",
+        };
+
+        for (const field of ["line1", "line2", "city", "county", "country"]) {
+          if (address[field] !== undefined) {
+            nextAddress[field] = String(address[field] || "").trim();
+          }
+        }
+
+        // Postcodes are stored uppercase (User.address.postcode uses
+        // `uppercase: true`), matching the admin create forms.
+        if (address.postcode !== undefined) {
+          nextAddress.postcode = String(address.postcode || "")
+            .trim()
+            .toUpperCase();
+        }
+
+        if (!nextAddress.line1) {
+          return res
+            .status(400)
+            .json({ message: "Address line 1 is required." });
+        }
+        if (!nextAddress.city) {
+          return res.status(400).json({ message: "City / town is required." });
+        }
+        if (!nextAddress.postcode) {
+          return res.status(400).json({ message: "Postcode is required." });
+        }
+
+        customer.address = nextAddress;
+      }
+
       await customer.save();
 
       return res.status(200).json({
@@ -155,6 +212,7 @@ router.patch(
           preferredName: customer.preferredName,
           additionalEmails: customer.additionalEmails,
           profilePhotoUrl: customer.profilePhotoUrl,
+          address: customer.address,
         },
       });
     } catch (error) {
@@ -313,13 +371,15 @@ router.patch(
   async (req, res, next) => {
     try {
       const { id } = req.params;
-      const { fullName, email, expiresAt, password } = req.body || {};
+      const { fullName, email, expiresAt, password, address } =
+        req.body || {};
 
       if (
         !fullName &&
         !email &&
         expiresAt === undefined &&
-        password === undefined
+        password === undefined &&
+        address === undefined
       ) {
         return res.status(400).json({ message: "No update fields provided." });
       }
@@ -367,6 +427,50 @@ router.patch(
         targetUser.password = password;
       }
 
+      /*
+       * Residential address, edited by an admin.
+       *
+       * Written to the same User.address sub-document that customer creation
+       * and the customer's own app screen use, so the policy certificate PDF
+       * and the in-app policy document immediately show the new value.
+       *
+       * Only the keys actually sent are touched, so a partial update cannot
+       * wipe fields the form does not display.
+       */
+      if (address !== undefined) {
+        if (typeof address !== "object" || Array.isArray(address)) {
+          return res
+            .status(400)
+            .json({ message: "Address must be an object." });
+        }
+
+        const existingAddress = targetUser.address || {};
+        const nextAddress = {
+          line1: existingAddress.line1 || "",
+          line2: existingAddress.line2 || "",
+          city: existingAddress.city || "",
+          county: existingAddress.county || "",
+          postcode: existingAddress.postcode || "",
+          country: existingAddress.country || "",
+        };
+
+        for (const field of ["line1", "line2", "city", "county", "country"]) {
+          if (address[field] !== undefined) {
+            nextAddress[field] = String(address[field] || "").trim();
+          }
+        }
+
+        // Postcodes are stored uppercase (User.address.postcode uses
+        // `uppercase: true`), matching the create forms.
+        if (address.postcode !== undefined) {
+          nextAddress.postcode = String(address.postcode || "")
+            .trim()
+            .toUpperCase();
+        }
+
+        targetUser.address = nextAddress;
+      }
+
       await targetUser.save();
 
       return res.status(200).json({
@@ -378,6 +482,7 @@ router.patch(
           role: targetUser.role,
           status: targetUser.status,
           expiresAt: targetUser.expiresAt,
+          address: targetUser.address,
         },
       });
     } catch (error) {
