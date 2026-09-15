@@ -36,6 +36,7 @@ router.post(
         gender,
         drivingLicenceNumber,
         address,
+        phone,
       } = req.body;
 
       if (role === "Super Admin") {
@@ -75,7 +76,7 @@ router.post(
               "Driving licence number is required for Customer accounts.",
           });
         }
-        const missingAddressFields = ["line1", "city", "postcode", "country"].filter(
+        const missingAddressFields = ["line1", "city", "postcode"].filter(
           (field) => !address?.[field]?.trim(),
         );
         if (missingAddressFields.length) {
@@ -133,6 +134,12 @@ router.post(
         gender: role === "Customer" ? gender : undefined,
         drivingLicenceNumber:
           role === "Customer" ? normalizedLicence : undefined,
+        // Mobile number captured at creation so it appears on the policy
+        // certificate, the emailed PDF and the customer's own profile screen.
+        phone:
+          role === "Customer" && typeof phone === "string" && phone.trim()
+            ? phone.trim()
+            : undefined,
         address:
           role === "Customer"
             ? {
@@ -141,7 +148,8 @@ router.post(
                 city: address.city.trim(),
                 county: address.county?.trim() || "",
                 postcode: address.postcode.trim().toUpperCase(),
-                country: address.country.trim(),
+                // Country is fixed platform-wide; never taken from the client.
+                country: "GB",
               }
             : undefined,
       });
@@ -174,7 +182,7 @@ router.post(
   },
 );
 
-router.post("/login", async (req, res) => {
+router.post("/login", async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
@@ -184,14 +192,9 @@ router.post("/login", async (req, res) => {
         .json({ message: "Please provide both email and password" });
     }
 
-    const user = await User.findOne({
-      email: email.toLowerCase().trim(),
-    });
-
+    const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
-      return res.status(401).json({
-        message: "Invalid credentials",
-      });
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
     if (
@@ -237,15 +240,11 @@ router.post("/login", async (req, res) => {
       }
     }
 
-    const passwordIsCorrect = await bcrypt.compare(password, user.password);
-
-    if (!passwordIsCorrect) {
-      return res.status(401).json({
-        message: "Invalid credentials",
-      });
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    // Successful login - keep existing token and cookie logic
     const accessToken = jwt.sign(
       { id: user._id, role: user.role, email: user.email },
       process.env.JWT_SECRET,
@@ -265,12 +264,12 @@ router.post("/login", async (req, res) => {
 
     res.cookie("accessToken", accessToken, {
       ...cookieOptions,
-      maxAge: 15 * 60 * 1000,
+      maxAge: 15 * 60 * 1000, 
     });
 
     res.cookie("refreshToken", refreshToken, {
       ...cookieOptions,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: 7 * 24 * 60 * 60 * 1000, 
     });
 
     if (user.role === "Customer") {
@@ -302,10 +301,7 @@ router.post("/login", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("[auth] Login error:", error);
-    return res.status(500).json({
-      message: "Login service temporarily unavailable",
-    });
+    next(error);
   }
 });
 

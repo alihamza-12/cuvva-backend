@@ -27,7 +27,7 @@ router.get(
 
       const customer = await User.findById(req.user._id)
         .select(
-          "fullName email phone dateOfBirth gender drivingLicenceNumber role status expiresAt createdBy createdAt preferredName additionalEmails profilePhotoUrl notificationPreferences address",
+          "fullName email phone dateOfBirth gender drivingLicenceNumber role status expiresAt createdBy createdAt preferredName additionalEmails additionalPhones profilePhotoUrl notificationPreferences address",
         )
         .lean();
 
@@ -51,13 +51,20 @@ router.patch(
   authorizeRoles("Customer"),
   async (req, res, next) => {
     try {
-      const { preferredName, additionalEmail, phone, profilePhotoUrl, address } =
-        req.body || {};
+      const {
+        preferredName,
+        additionalEmail,
+        additionalPhone,
+        phone,
+        profilePhotoUrl,
+        address,
+      } = req.body || {};
 
       if (
         preferredName === undefined &&
         additionalEmail === undefined &&
         phone === undefined &&
+        additionalPhone === undefined &&
         profilePhotoUrl === undefined &&
         address === undefined
       ) {
@@ -125,6 +132,34 @@ router.patch(
         customer.phone = trimmedPhone;
       }
 
+      /*
+       * An extra contact number. Appended to additionalPhones so the primary
+       * number captured at customer creation is never replaced.
+       */
+      if (additionalPhone !== undefined) {
+        const extraPhone =
+          typeof additionalPhone === "string" ? additionalPhone.trim() : "";
+
+        if (!extraPhone) {
+          return res.status(400).json({ message: "Phone number is required." });
+        }
+        if (extraPhone === customer.phone) {
+          return res
+            .status(400)
+            .json({ message: "This is already your main mobile number." });
+        }
+        if ((customer.additionalPhones || []).includes(extraPhone)) {
+          return res
+            .status(400)
+            .json({ message: "This number has already been added." });
+        }
+
+        customer.additionalPhones = [
+          ...(customer.additionalPhones || []),
+          extraPhone,
+        ];
+      }
+
       if (profilePhotoUrl !== undefined) {
         if (typeof profilePhotoUrl !== "string" || !profilePhotoUrl.trim()) {
           return res
@@ -169,11 +204,14 @@ router.patch(
           country: existingAddress.country || "",
         };
 
-        for (const field of ["line1", "line2", "city", "county", "country"]) {
+        for (const field of ["line1", "line2", "city", "county"]) {
           if (address[field] !== undefined) {
             nextAddress[field] = String(address[field] || "").trim();
           }
         }
+
+        // Country is fixed to GB and is never editable from any client.
+        nextAddress.country = "GB";
 
         // Postcodes are stored uppercase (User.address.postcode uses
         // `uppercase: true`), matching the admin create forms.
@@ -211,6 +249,7 @@ router.patch(
           phone: customer.phone,
           preferredName: customer.preferredName,
           additionalEmails: customer.additionalEmails,
+          additionalPhones: customer.additionalPhones,
           profilePhotoUrl: customer.profilePhotoUrl,
           address: customer.address,
         },
@@ -371,15 +410,24 @@ router.patch(
   async (req, res, next) => {
     try {
       const { id } = req.params;
-      const { fullName, email, expiresAt, password, address } =
-        req.body || {};
+      const {
+        fullName,
+        email,
+        expiresAt,
+        password,
+        address,
+        phone,
+        additionalPhones,
+      } = req.body || {};
 
       if (
         !fullName &&
         !email &&
         expiresAt === undefined &&
         password === undefined &&
-        address === undefined
+        address === undefined &&
+        phone === undefined &&
+        additionalPhones === undefined
       ) {
         return res.status(400).json({ message: "No update fields provided." });
       }
@@ -428,6 +476,42 @@ router.patch(
       }
 
       /*
+       * Mobile number, edited by an admin. Stored on the same User.phone field
+       * the customer's own app screen writes, so both sides stay in sync and
+       * the policy documents pick it up.
+       */
+      if (phone !== undefined) {
+        const trimmedPhone = typeof phone === "string" ? phone.trim() : "";
+        if (!trimmedPhone) {
+          return res.status(400).json({ message: "Phone number is required." });
+        }
+        targetUser.phone = trimmedPhone;
+      }
+
+      /*
+       * Extra contact numbers, managed by an admin. The whole list is sent so
+       * numbers can be edited or removed; blanks and duplicates are dropped and
+       * the primary number is never included here.
+       */
+      if (additionalPhones !== undefined) {
+        if (!Array.isArray(additionalPhones)) {
+          return res
+            .status(400)
+            .json({ message: "Additional phones must be a list." });
+        }
+
+        const cleaned = [];
+        for (const entry of additionalPhones) {
+          const value = typeof entry === "string" ? entry.trim() : "";
+          if (!value) continue;
+          if (value === targetUser.phone) continue;
+          if (!cleaned.includes(value)) cleaned.push(value);
+        }
+
+        targetUser.additionalPhones = cleaned;
+      }
+
+      /*
        * Residential address, edited by an admin.
        *
        * Written to the same User.address sub-document that customer creation
@@ -454,11 +538,14 @@ router.patch(
           country: existingAddress.country || "",
         };
 
-        for (const field of ["line1", "line2", "city", "county", "country"]) {
+        for (const field of ["line1", "line2", "city", "county"]) {
           if (address[field] !== undefined) {
             nextAddress[field] = String(address[field] || "").trim();
           }
         }
+
+        // Country is fixed to GB and is never editable from any client.
+        nextAddress.country = "GB";
 
         // Postcodes are stored uppercase (User.address.postcode uses
         // `uppercase: true`), matching the create forms.
@@ -482,6 +569,8 @@ router.patch(
           role: targetUser.role,
           status: targetUser.status,
           expiresAt: targetUser.expiresAt,
+          phone: targetUser.phone,
+          additionalPhones: targetUser.additionalPhones,
           address: targetUser.address,
         },
       });

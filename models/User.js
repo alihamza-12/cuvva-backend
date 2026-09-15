@@ -34,7 +34,11 @@ const userSchema = new mongoose.Schema(
       city: String,
       county: String,
       postcode: { type: String, uppercase: true, trim: true },
-      country: { type: String, default: "UK" },
+      /*
+       * Country is fixed to GB across the platform — it is displayed read-only
+       * in every form and is never user-editable.
+       */
+      country: { type: String, default: "GB" },
     },
 
     preferredName: { type: String, trim: true, default: undefined },
@@ -46,6 +50,12 @@ const userSchema = new mongoose.Schema(
     },
 
     additionalEmails: { type: [String], default: [] },
+    /*
+     * Extra contact numbers. The main `phone` is whatever was entered when the
+     * customer was created and always takes priority; these are additions only,
+     * so "add another number" can never overwrite the primary one.
+     */
+    additionalPhones: { type: [String], default: [] },
 
     lastFourDigits: { type: String, trim: true }, 
     role: {
