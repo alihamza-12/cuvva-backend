@@ -3,6 +3,8 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const { verifyJWT, authorizeRoles } = require("../middlewares/auth");
+const { normalizeCaseFields } = require("../utils/normalizeCase");
+const { parseCardLast4 } = require("../utils/normalizeCardLast4");
 const router = express.Router();
 
 function getCookieOptions(req) {
@@ -25,6 +27,11 @@ router.post(
   authorizeRoles("Super Admin", "Sub Admin"),
   async (req, res, next) => {
     try {
+      /*
+       * Names and address lines arrive title cased ("jane doe" -> "Jane Doe"),
+       * the postcode and driving licence arrive uppercased, and catalog values
+       * such as make/model are left exactly as they were typed.
+       */
       const {
         fullName,
         email,
@@ -37,7 +44,8 @@ router.post(
         drivingLicenceNumber,
         address,
         phone,
-      } = req.body;
+        lastFourDigits,
+      } = normalizeCaseFields(req.body || {});
 
       if (role === "Super Admin") {
         return res.status(400).json({
@@ -58,6 +66,11 @@ router.post(
           .status(400)
           .json({ message: "All registration fields are required" });
       }
+
+      // Optional at customer creation: blank is allowed, anything else must be
+      // exactly four digits. When provided it is stored on the customer so the
+      // Create Policy screen can pre-fill the payment card field.
+      let parsedCardLast4 = { ok: true, value: null };
 
       if (role === "Customer") {
         if (!dateOfBirth) {
@@ -83,6 +96,11 @@ router.post(
           return res.status(400).json({
             message: `Customer address is incomplete. Required: ${missingAddressFields.join(", ")}.`,
           });
+        }
+
+        parsedCardLast4 = parseCardLast4(lastFourDigits);
+        if (!parsedCardLast4.ok) {
+          return res.status(400).json({ message: parsedCardLast4.message });
         }
       }
 
@@ -140,6 +158,10 @@ router.post(
           role === "Customer" && typeof phone === "string" && phone.trim()
             ? phone.trim()
             : undefined,
+        // Optional last four digits of the customer's payment card. Used to
+        // pre-fill (and then update) the payment field on Create Policy.
+        lastFourDigits:
+          role === "Customer" ? parsedCardLast4.value || undefined : undefined,
         address:
           role === "Customer"
             ? {
@@ -165,6 +187,7 @@ router.post(
           email: newUser.email,
           role: newUser.role,
           expiresAt: newUser.expiresAt,
+          lastFourDigits: newUser.lastFourDigits,
         },
       });
     } catch (error) {

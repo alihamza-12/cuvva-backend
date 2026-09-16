@@ -1,12 +1,24 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const { toTitleCase } = require("../utils/normalizeCase");
+const {
+  normalizeCardLast4,
+  isValidCardLast4,
+  isBlankCardLast4,
+} = require("../utils/normalizeCardLast4");
 
 const userSchema = new mongoose.Schema(
   {
 
-    fullName: { type: String, required: true, trim: true },
-    firstName: { type: String },
-    lastName: { type: String },
+    /*
+     * Names are stored title cased ("jane doe" -> "Jane Doe") so the value the
+     * admin typed, the value in MongoDB and the value printed on the policy
+     * certificate are always identical. The setter runs on every write path,
+     * including findOneAndUpdate-style updates, so no route can bypass it.
+     */
+    fullName: { type: String, required: true, trim: true, set: toTitleCase },
+    firstName: { type: String, set: toTitleCase },
+    lastName: { type: String, set: toTitleCase },
     email: {
       type: String,
       required: true,
@@ -29,10 +41,11 @@ const userSchema = new mongoose.Schema(
     },
 
     address: {
-      line1: String,
-      line2: String,
-      city: String,
-      county: String,
+      // Address prose is stored title cased, postcode is stored uppercase.
+      line1: { type: String, set: toTitleCase },
+      line2: { type: String, set: toTitleCase },
+      city: { type: String, set: toTitleCase },
+      county: { type: String, set: toTitleCase },
       postcode: { type: String, uppercase: true, trim: true },
       /*
        * Country is fixed to GB across the platform — it is displayed read-only
@@ -41,7 +54,12 @@ const userSchema = new mongoose.Schema(
       country: { type: String, default: "GB" },
     },
 
-    preferredName: { type: String, trim: true, default: undefined },
+    preferredName: {
+      type: String,
+      trim: true,
+      default: undefined,
+      set: toTitleCase,
+    },
     profilePhotoUrl: { type: String, trim: true, default: null },
 
     notificationPreferences: {
@@ -57,7 +75,24 @@ const userSchema = new mongoose.Schema(
      */
     additionalPhones: { type: [String], default: [] },
 
-    lastFourDigits: { type: String, trim: true }, 
+    /*
+     * Last four digits of the customer's payment card.
+     *
+     * Optional at customer creation, then written back here every time a policy
+     * is issued for this customer (see POST /api/policies), so the Create Policy
+     * screen can pre-fill the payment field on the next visit with whatever the
+     * card last used was. Always four digits, or blank.
+     */
+    lastFourDigits: {
+      type: String,
+      trim: true,
+      default: undefined,
+      set: normalizeCardLast4,
+      validate: {
+        validator: (value) => isBlankCardLast4(value) || isValidCardLast4(value),
+        message: "Card last four digits must contain exactly 4 numbers.",
+      },
+    },
     role: {
       type: String,
       enum: ["Super Admin", "Sub Admin", "Customer"],

@@ -5,6 +5,8 @@ const {
   getCustomerVehicleHistory,
   isValidObjectId,
 } = require("../services/customerVehicleHistory");
+const { toTitleCase } = require("../utils/normalizeCase");
+const { parseCardLast4 } = require("../utils/normalizeCardLast4");
 
 const router = express.Router();
 
@@ -204,9 +206,11 @@ router.patch(
           country: existingAddress.country || "",
         };
 
+        // Address prose is stored title cased ("flat 2, 12 high street" ->
+        // "Flat 2, 12 High Street") exactly like the admin create forms.
         for (const field of ["line1", "line2", "city", "county"]) {
           if (address[field] !== undefined) {
-            nextAddress[field] = String(address[field] || "").trim();
+            nextAddress[field] = toTitleCase(String(address[field] || "").trim());
           }
         }
 
@@ -418,6 +422,7 @@ router.patch(
         address,
         phone,
         additionalPhones,
+        lastFourDigits,
       } = req.body || {};
 
       if (
@@ -427,7 +432,8 @@ router.patch(
         password === undefined &&
         address === undefined &&
         phone === undefined &&
-        additionalPhones === undefined
+        additionalPhones === undefined &&
+        lastFourDigits === undefined
       ) {
         return res.status(400).json({ message: "No update fields provided." });
       }
@@ -454,6 +460,8 @@ router.patch(
       }
 
       if (typeof fullName === "string" && fullName.trim()) {
+        // The User schema setter also title cases this, so the stored value and
+        // the value shown back to the admin always agree.
         targetUser.fullName = fullName.trim();
       }
 
@@ -512,6 +520,24 @@ router.patch(
       }
 
       /*
+       * Last four digits of the customer's payment card.
+       *
+       * Optional — sending an empty value clears it, sending four digits sets
+       * it, anything else is rejected. This is the same field the Create Policy
+       * screen reads (to pre-fill) and writes (after issuing a policy), so the
+       * customer detail edit form and the policy form can never disagree.
+       */
+      if (lastFourDigits !== undefined) {
+        const parsedCard = parseCardLast4(lastFourDigits);
+
+        if (!parsedCard.ok) {
+          return res.status(400).json({ message: parsedCard.message });
+        }
+
+        targetUser.lastFourDigits = parsedCard.value || undefined;
+      }
+
+      /*
        * Residential address, edited by an admin.
        *
        * Written to the same User.address sub-document that customer creation
@@ -540,7 +566,7 @@ router.patch(
 
         for (const field of ["line1", "line2", "city", "county"]) {
           if (address[field] !== undefined) {
-            nextAddress[field] = String(address[field] || "").trim();
+            nextAddress[field] = toTitleCase(String(address[field] || "").trim());
           }
         }
 
@@ -572,6 +598,7 @@ router.patch(
           phone: targetUser.phone,
           additionalPhones: targetUser.additionalPhones,
           address: targetUser.address,
+          lastFourDigits: targetUser.lastFourDigits,
         },
       });
     } catch (error) {

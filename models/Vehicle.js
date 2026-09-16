@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { toTitleCase } = require("../utils/normalizeCase");
 
 const vehicleSchema = new mongoose.Schema(
   {
@@ -31,7 +32,7 @@ const vehicleSchema = new mongoose.Schema(
     make: { type: String, required: true, trim: true },
     model: { type: String, required: true, trim: true },
     description: { type: String, trim: true },
-    colour: { type: String, trim: true },
+    colour: { type: String, trim: true, set: toTitleCase },
     year: { type: Number, required: true },
     vehicleIdentificationNumber: {
       type: String,

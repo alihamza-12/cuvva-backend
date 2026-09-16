@@ -217,6 +217,24 @@ router.post(
         }
       }
 
+      /*
+       * The last four digits typed here are the card the customer is paying
+       * with, so they are written back onto the customer record. That is what
+       * pre-fills the payment field the next time a policy is created for this
+       * customer, and what the customer detail screens display.
+       *
+       * Written before the policy row so a failure can never leave a policy
+       * behind with an out-of-date card on the customer.
+       */
+      if (String(targetCustomer.lastFourDigits || "") !== cardLast4) {
+        await User.updateOne(
+          { _id: targetCustomer._id },
+          { $set: { lastFourDigits: cardLast4 } },
+          { runValidators: true },
+        );
+        targetCustomer.lastFourDigits = cardLast4;
+      }
+
       const targetVehicle = await Vehicle.findById(vehicleId);
       if (!targetVehicle) {
         return res.status(404).json({
