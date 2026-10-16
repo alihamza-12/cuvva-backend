@@ -108,6 +108,9 @@ const userSchema = new mongoose.Schema(
     suspendedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     expiresAt: { type: Date, default: null }, 
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    // Tempify self-registration marker - when user registers via Tempify (client.zavoryn.tech), authSource is "tempify" and createdBy is self
+    authSource: { type: String, default: undefined },
+    emailVerifiedAt: { type: Date, default: null },
 
     // Used only for Sub Admin accounts. Customers in this list remain visible
     // to the Sub Admin, but cannot be selected for new policy creation.
