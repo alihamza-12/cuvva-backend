@@ -15,6 +15,7 @@ const vehicleRoutes = require("./routes/vehicles");
 const policyRoutes = require("./routes/policies");
 const customerRoutes = require("./routes/customers");
 const managementRoutes = require("./routes/management");
+const cuvvafyPricingRoutes = require("./routes/cuvvafyPricing");
 
 const app = express();
 
@@ -98,6 +99,7 @@ app.use("/api/vehicles", verifyJWT, vehicleRoutes);
 app.use("/api/policies", verifyJWT, policyRoutes);
 app.use("/api/customers", customerRoutes);
 app.use("/api/management", managementRoutes);
+app.use("/api/cuvvafy-pricing", cuvvafyPricingRoutes);
 
 // Serve frontend
 const distPath = path.join(__dirname, "..", "frontend", "dist");
